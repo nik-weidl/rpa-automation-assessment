@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Process Log ────────────────────────────────────────────────────────────
+
+model ProcessLog {
+  id          String   @id @default(cuid())
+  name        String
+  fileName    String
+  fileSize    Int
+  filePath    String
+  status      LogStatus @default(PENDING)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  traces      Trace[]
+  activities  Activity[]
+  assessments Assessment[]
+}
+
+enum LogStatus {
+  PENDING
+  PROCESSING
+  READY
+  ERROR
+}
+
+// ─── Trace & Event ──────────────────────────────────────────────────────────
+
+model Trace {
+  id           String   @id @default(cuid())
+  caseId       String
+  processLogId String
+  processLog   ProcessLog @relation(fields: [processLogId], references: [id], onDelete: Cascade)
+  events       Event[]
+
+  @@index([processLogId])
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  traceId    String
+  trace      Trace    @relation(fields: [traceId], references: [id], onDelete: Cascade)
+  activity   String
+  resource   String?
+  timestamp  DateTime
+  attributes Json     @default("{}")
+
+  @@index([traceId])
+}
+
+// ─── Activity Profile ────────────────────────────────────────────────────────
+
+model Activity {
+  id               String   @id @default(cuid())
+  processLogId     String
+  processLog       ProcessLog @relation(fields: [processLogId], references: [id], onDelete: Cascade)
+  name             String
+  frequency        Int
+  caseCoverage     Float
+  averageDuration  Float    // milliseconds
+  minDuration      Float
+  maxDuration      Float
+  resourceCount    Int
+  resources        String[]
+  predecessors     String[]
+  successors       String[]
+  // Extended metrics
+  durationVariance Float    @default(0)
+  resourceEntropy  Float    @default(0)
+  predecessorEntropy Float  @default(0)
+  successorEntropy   Float  @default(0)
+  createdAt        DateTime @default(now())
+
+  assessments Assessment[]
+
+  @@unique([processLogId, name])
+  @@index([processLogId])
+}
+
+// ─── Assessment ──────────────────────────────────────────────────────────────
+
+model Assessment {
+  id           String   @id @default(cuid())
+  processLogId String
+  processLog   ProcessLog @relation(fields: [processLogId], references: [id], onDelete: Cascade)
+  activityId   String
+  activity     Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  type         AssessmentType @default(RULE_BASED)
+  model        String?  // LLM model name if AI-based
+  score        Float
+  label        AutomationLabel
+  reasoning    String
+  risks        String[] @default([])
+  missingInfo  String[] @default([])
+  latencyMs    Int?
+  costUsd      Float?
+  rawResponse  Json?
+  createdAt    DateTime @default(now())
+
+  @@index([activityId])
+  @@index([processLogId])
+}
+
+enum AssessmentType {
+  RULE_BASED
+  LLM_SINGLE_SHOT
+  LLM_AGENTIC
+}
+
+enum AutomationLabel {
+  LOW
+  MEDIUM
+  HIGH
+}
