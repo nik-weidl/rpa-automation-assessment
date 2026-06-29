@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, DragEvent, ChangeEvent } from "react";
+import { useState, useRef, useEffect, DragEvent, ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
@@ -12,6 +12,8 @@ export default function UploadPage() {
   const [uploadedLogs, setUploadedLogs] = useState<ProcessLog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
+  const [renamingIds, setRenamingIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -82,7 +84,7 @@ export default function UploadPage() {
       }
 
       // Refresh list
-      fetchUploadedLogs();
+      await fetchUploadedLogs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -92,7 +94,7 @@ export default function UploadPage() {
 
   const fetchUploadedLogs = async () => {
     try {
-      const response = await fetch("/api/upload");
+      const response = await fetch("/api/process-logs");
       const result = await response.json();
 
       if (result.success) {
@@ -100,6 +102,81 @@ export default function UploadPage() {
       }
     } catch (err) {
       console.error("Failed to fetch logs:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUploadedLogs();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this uploaded log and its file?")) {
+      return;
+    }
+
+    setDeletingIds((prev) => [...prev, id]);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch("/api/process-logs", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Delete failed");
+      }
+
+      setSuccess("Uploaded log deleted successfully.");
+      setUploadedLogs((prev) => prev.filter((log) => log.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingIds((prev) => prev.filter((current) => current !== id));
+    }
+  };
+
+  const handleRename = async (log: ProcessLog) => {
+    const currentName = log.fileName || "";
+    const newNameInput = prompt("Enter the new file name", currentName);
+    if (!newNameInput || newNameInput.trim() === currentName) {
+      return;
+    }
+
+    let newFileName = newNameInput.trim();
+    if (!newFileName.toLowerCase().endsWith(".xes")) {
+      newFileName += ".xes";
+    }
+
+    setRenamingIds((prev) => [...prev, log.id]);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch("/api/process-logs", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: log.id, fileName: newFileName }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Rename failed");
+      }
+
+      setSuccess("Uploaded file renamed successfully.");
+      setUploadedLogs((prev) => prev.map((item) => (item.id === log.id ? result.data : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+    } finally {
+      setRenamingIds((prev) => prev.filter((current) => current !== log.id));
     }
   };
 
@@ -167,14 +244,33 @@ export default function UploadPage() {
                   <div>
                     <p className="font-semibold">{log.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {log.fileName} • {(log.fileSize / 1024).toFixed(2)} KB
+                      {log.fileName} • {(log.fileSize / 1024).toFixed(2)} KB • {log.status}
                     </p>
+                    <p className="text-xs text-muted-foreground">Uploaded {new Date(log.createdAt).toLocaleString()}</p>
                   </div>
-                  <Link href={`/dashboard?processId=${log.id}`}>
-                    <Button variant="outline" size="sm">
-                      View
+                  <div className="flex gap-2 items-center">
+                    <Link href={`/process-log/${log.id}`}>
+                      <Button variant="outline" size="sm" disabled={log.status !== "READY"}>
+                        View
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleRename(log)}
+                      disabled={renamingIds.includes(log.id)}
+                    >
+                      {renamingIds.includes(log.id) ? "Renaming..." : "Rename"}
                     </Button>
-                  </Link>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDelete(log.id)}
+                      disabled={deletingIds.includes(log.id)}
+                    >
+                      {deletingIds.includes(log.id) ? "Deleting..." : "Delete"}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
