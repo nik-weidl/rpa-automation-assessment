@@ -3,14 +3,35 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: development
+    command: npm run dev
     ports:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgresql://rpa_user:rpa_password@db:5432/rpa_assessment?schema=public
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - NODE_ENV=development
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - node_modules/
+            - .next/
+            - .git/
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: package-lock.json
+        - action: rebuild
+          path: Dockerfile
     restart: unless-stopped
 
   db:
