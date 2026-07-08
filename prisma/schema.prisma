@@ -68,6 +68,7 @@ model Activity {
   frequency        Int
   caseCoverage     Float
   averageDuration  Float    // milliseconds
+  medianDuration   Float    @default(0)
   minDuration      Float
   maxDuration      Float
   resourceCount    Int

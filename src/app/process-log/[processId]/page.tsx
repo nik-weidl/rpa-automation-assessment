@@ -14,6 +14,9 @@ export default async function ProcessLogPage({ params }: PageProps) {
 
   const processLog = await prisma.processLog.findUnique({
     where: { id: processId },
+    include: {
+      activities: true,
+    },
   });
 
   if (!processLog) {

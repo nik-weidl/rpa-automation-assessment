@@ -20,7 +20,7 @@ export async function calculateAndStoreActivityProfiles(
   processLogId: string,
   parsedLog: XesLog
 ): Promise<void> {
-  // Sort events chronologically per trace to ensure correct duration/transition mapping.
+  // sort events chronologically per trace to ensure correct duration/transition mapping.
   const sortedTraces = parsedLog.traces.map((trace) => {
     const sortedEvents = [...trace.events].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
@@ -31,7 +31,7 @@ export async function calculateAndStoreActivityProfiles(
     };
   });
 
-  // Calculate statistics in memory
+  // calculate statistics in memory
   const statsMap = new Map<string, ActivityStats>();
 
   for (const trace of sortedTraces) {
@@ -61,17 +61,17 @@ export async function calculateAndStoreActivityProfiles(
         stats.resources.push(event.resource);
       }
 
-      // Elapsed duration from predecessor event in trace
+      // elapsed duration from predecessor event in trace
       if (i > 0) {
         const duration = event.timestamp.getTime() - events[i - 1].timestamp.getTime();
         stats.durations.push(duration);
 
-        // Track predecessor transition
+        // track predecessor transition
         const pred = events[i - 1].activity;
         stats.predecessors.set(pred, (stats.predecessors.get(pred) || 0) + 1);
       }
 
-      // Track successor transition
+      // track successor transition
       if (i < events.length - 1) {
         const succ = events[i + 1].activity;
         stats.successors.set(succ, (stats.successors.get(succ) || 0) + 1);
@@ -86,6 +86,7 @@ export async function calculateAndStoreActivityProfiles(
     let minDuration = 0;
     let maxDuration = 0;
     let averageDuration = 0;
+    let medianDuration = 0;
     let durationVariance = 0;
 
     if (durations.length > 0) {
@@ -95,9 +96,16 @@ export async function calculateAndStoreActivityProfiles(
       durationVariance =
         durations.reduce((sum, d) => sum + Math.pow(d - averageDuration, 2), 0) /
         durations.length;
+
+      // calculate median duration
+      const sorted = [...durations].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      medianDuration = sorted.length % 2 !== 0
+        ? sorted[mid]
+        : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
-    // Resources and Resource Entropy
+    // resources and Resource Entropy
     const uniqueResources = Array.from(new Set(stats.resources));
     const resourceFreq = new Map<string, number>();
     stats.resources.forEach((r) => {
@@ -112,7 +120,7 @@ export async function calculateAndStoreActivityProfiles(
       }
     }
 
-    // Predecessor Entropy
+    // predecessor Entropy
     const totalPreds = Array.from(stats.predecessors.values()).reduce((sum, val) => sum + val, 0);
     let predecessorEntropy = 0;
     if (totalPreds > 0) {
@@ -122,7 +130,7 @@ export async function calculateAndStoreActivityProfiles(
       }
     }
 
-    // Successor Entropy
+    // successor Entropy
     const totalSuccs = Array.from(stats.successors.values()).reduce((sum, val) => sum + val, 0);
     let successorEntropy = 0;
     if (totalSuccs > 0) {
@@ -132,7 +140,7 @@ export async function calculateAndStoreActivityProfiles(
       }
     }
 
-    // Predecessors list and successors list (unique names)
+    // predecessors list and successors list (unique names)
     const predecessors = Array.from(stats.predecessors.keys());
     const successors = Array.from(stats.successors.keys());
 
@@ -142,6 +150,7 @@ export async function calculateAndStoreActivityProfiles(
       frequency: stats.frequency,
       caseCoverage: totalTracesCount > 0 ? stats.cases.size / totalTracesCount : 0,
       averageDuration,
+      medianDuration,
       minDuration,
       maxDuration,
       resourceCount: uniqueResources.length,
@@ -155,9 +164,9 @@ export async function calculateAndStoreActivityProfiles(
     };
   });
 
-  // Database ingestion transaction (increase timeout to 60s for large files)
+  // database ingestion transaction (increase timeout to 60s for large files)
   await prisma.$transaction(async (tx) => {
-    // 1. Delete any existing traces for this process log (for clean overwrites)
+    // 1. delete any existing traces for this process log (for clean overwrites)
     await tx.trace.deleteMany({
       where: { processLogId },
     });
@@ -165,7 +174,7 @@ export async function calculateAndStoreActivityProfiles(
       where: { processLogId },
     });
 
-    // 2. Batch insert Traces and retrieve database IDs using createManyAndReturn
+    // 2. batch insert Traces and retrieve database IDs using createManyAndReturn
     const tracesCreated = await tx.trace.createManyAndReturn({
       data: sortedTraces.map((trace) => ({
         caseId: trace.caseId,
@@ -173,13 +182,13 @@ export async function calculateAndStoreActivityProfiles(
       })),
     });
 
-    // 3. Map caseId to the inserted Trace ID
+    // 3. map caseId to the inserted Trace ID
     const caseIdToTraceId = new Map<string, string>();
     for (const t of tracesCreated) {
       caseIdToTraceId.set(t.caseId, t.id);
     }
 
-    // 4. Flatten and batch insert Events
+    // 4. flatten and batch insert Events
     const eventsData = [];
     for (const trace of sortedTraces) {
       const traceId = caseIdToTraceId.get(trace.caseId);
@@ -202,7 +211,7 @@ export async function calculateAndStoreActivityProfiles(
       });
     }
 
-    // 5. Batch insert Activity Profiles
+    // 5. batch insert Activity Profiles
     if (activitiesData.length > 0) {
       await tx.activity.createMany({
         data: activitiesData,
