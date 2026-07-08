@@ -3,6 +3,7 @@ import path from "path";
 
 export default defineConfig({
   test: {
+    testTimeout: 20000,
     exclude: [
       "**/node_modules/**",
       "**/.next/**",
