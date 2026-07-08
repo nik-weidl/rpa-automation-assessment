@@ -17,6 +17,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - ../testscript:/testscript:ro
     develop:
       watch:
         - action: sync

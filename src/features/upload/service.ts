@@ -58,7 +58,11 @@ export async function uploadXESFile(formData: FormData): Promise<{ processLog: P
   });
 
   try {
-    await parseXesFile(fileName);
+    const parsedLog = await parseXesFile(fileName);
+    
+    const { calculateAndStoreActivityProfiles } = await import("@/features/activity-profiles/service");
+    await calculateAndStoreActivityProfiles(processLog.id, parsedLog);
+
     const readyLog = await prisma.processLog.update({
       where: { id: processLog.id },
       data: { status: "READY" },
