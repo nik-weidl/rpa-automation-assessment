@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo } from "react";
+import { useState, memo, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +55,24 @@ MetricTooltip.displayName = "MetricTooltip";
 
 export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetailsClientProps) {
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
+  const [selectedDashboard, setSelectedDashboard] = useState<string>("frequency");
+  const [hoveredSlice, setHoveredSlice] = useState<number | null>(null);
+  const [activeTransitionType, setActiveTransitionType] = useState<"start" | "end">("start");
+  const [hoveredPathSlice, setHoveredPathSlice] = useState<number | null>(null);
+  const [activeDurationType, setActiveDurationType] = useState<"average" | "median">("average");
+  const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+
+  // fetch transition-graph data from API on mount to calculate path volumes
+  useEffect(() => {
+    fetch(`/api/process-logs/${processLog.id}/transition-graph?nodeLimit=1000`)
+      .then((res) => res.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setGraphData(res.data);
+        }
+      })
+      .catch((err) => console.error("failed to fetch transition graph for analytics", err));
+  }, [processLog.id]);
 
   // helper to format duration in a human-readable format
   const formatDuration = (ms: number) => {
@@ -71,6 +89,106 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
 
   // find the selected activity details from the process log relation
   const activity = processLog.activities.find((act) => act.name === selectedActivity);
+
+  // sort and filter activity statistics for the dashboard
+  const sortedActivities = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
+  const totalEvents = processLog.activities.reduce((sum, act) => sum + act.frequency, 0);
+
+  // calculate top 10 activities for the bar chart
+  const top10Activities = sortedActivities.slice(0, 10);
+  const maxFrequencyInTop10 = top10Activities.length > 0 ? top10Activities[0].frequency : 1;
+
+  // calculate top 5 activities + "others" group for the donut chart
+  const top5Activities = sortedActivities.slice(0, 5);
+  const othersFrequency = sortedActivities.slice(5).reduce((sum, act) => sum + act.frequency, 0);
+
+  const donutData = top5Activities.map((act) => ({
+    name: act.name,
+    frequency: act.frequency,
+    percentage: totalEvents > 0 ? (act.frequency / totalEvents) * 100 : 0,
+  }));
+
+  if (othersFrequency > 0) {
+    donutData.push({
+      name: "Others",
+      frequency: othersFrequency,
+      percentage: totalEvents > 0 ? (othersFrequency / totalEvents) * 100 : 0,
+    });
+  }
+
+  // list of harmonious colors for the donut slices
+  const sliceColors = [
+    "#3b82f6", // blue
+    "#8b5cf6", // violet
+    "#10b981", // emerald
+    "#f59e0b", // amber
+    "#ef4444", // rose
+    "#64748b", // slate (for "others")
+  ];
+
+  // ─── path transition data calculations ─────────────────────────────────────
+  
+  // calculate top 10 transitions excluding start/end placeholders
+  const activityTransitions = (graphData?.edges || [])
+    .filter((e) => e.source !== "__START__" && e.target !== "__END__")
+    .sort((a, b) => b.count - a.count);
+
+  const top10Transitions = activityTransitions.slice(0, 10);
+  const maxTransitionCount = top10Transitions.length > 0 ? top10Transitions[0].count : 1;
+
+  // calculate start and end transition points for the path donut chart
+  const startEdges = (graphData?.edges || []).filter((e) => e.source === "__START__");
+  const endEdges = (graphData?.edges || []).filter((e) => e.target === "__END__");
+  
+  const selectedPathEdges = activeTransitionType === "start" ? startEdges : endEdges;
+  const totalPathCases = selectedPathEdges.reduce((sum, e) => sum + e.count, 0);
+
+  const sortedPathTransitions = [...selectedPathEdges]
+    .map((e) => ({
+      name: activeTransitionType === "start" ? e.target : e.source,
+      count: e.count,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const top5Paths = sortedPathTransitions.slice(0, 5);
+  const othersPathsCount = sortedPathTransitions.slice(5).reduce((sum, t) => sum + t.count, 0);
+
+  const pathDonutData = top5Paths.map((t) => ({
+    name: t.name,
+    frequency: t.count,
+    percentage: totalPathCases > 0 ? (t.count / totalPathCases) * 100 : 0,
+  }));
+
+  if (othersPathsCount > 0) {
+    pathDonutData.push({
+      name: "Others",
+      frequency: othersPathsCount,
+      percentage: totalPathCases > 0 ? (othersPathsCount / totalPathCases) * 100 : 0,
+    });
+  }
+
+  // ─── performance & standardization calculations ───────────────────────────
+  
+  // calculate top 10 activities by selected duration type
+  const durationSorted = [...processLog.activities].sort((a, b) => {
+    const valA = activeDurationType === "average" ? a.averageDuration : a.medianDuration;
+    const valB = activeDurationType === "average" ? b.averageDuration : b.medianDuration;
+    return valB - valA;
+  });
+  const top10Durations = durationSorted.slice(0, 10);
+  const maxDurationInTop10 = top10Durations.length > 0 
+    ? (activeDurationType === "average" ? top10Durations[0].averageDuration : top10Durations[0].medianDuration)
+    : 1;
+
+  // calculate top 10 activities by combined branching complexity
+  const entropySorted = [...processLog.activities].sort(
+    (a, b) => (b.predecessorEntropy + b.successorEntropy) - (a.predecessorEntropy + a.successorEntropy)
+  );
+  const top10Entropy = entropySorted.slice(0, 10);
+  const maxEntropyValue = Math.max(
+    ...top10Entropy.map((a) => Math.max(a.predecessorEntropy, a.successorEntropy)),
+    1
+  );
 
   return (
     <div className="space-y-6 p-8 max-w-7xl mx-auto">
@@ -115,6 +233,528 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         </div>
         <ProcessGraph processLogId={processLog.id} onNodeSelect={setSelectedActivity} />
       </div>
+
+      {/* Process Log Analytics */}
+      <Card className="border shadow-md">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 border-b bg-slate-50/50">
+          <div>
+            <CardTitle>Process Log Analytics</CardTitle>
+            <CardDescription>Visual insights into event frequencies and execution paths</CardDescription>
+          </div>
+          {/* Dropdown Selector */}
+          <select
+            value={selectedDashboard}
+            onChange={(e) => setSelectedDashboard(e.target.value)}
+            className="w-full sm:w-64 bg-white border border-slate-200 text-slate-700 rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium cursor-pointer"
+          >
+            <option value="frequency">Activity Frequency Analysis</option>
+            <option value="paths">Transition Path Analysis</option>
+            <option value="performance">Performance & Standardization</option>
+          </select>
+        </CardHeader>
+        <CardContent className="p-6">
+          {selectedDashboard === "frequency" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* left column: horizontal bar chart */}
+              <div className="space-y-4">
+                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                  Top 10 Most Frequent Activities
+                  <MetricTooltip text="frequency of execution for the top 10 most active process steps." />
+                </h4>
+                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
+                  {top10Activities.map((act) => {
+                    const percent = (act.frequency / maxFrequencyInTop10) * 100;
+                    return (
+                      <div key={act.name} className="flex items-center text-xs gap-3">
+                        <span
+                          className="w-28 text-slate-600 font-medium truncate"
+                          title={act.name}
+                        >
+                          {act.name}
+                        </span>
+                        <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
+                          <div
+                            style={{ width: `${percent}%` }}
+                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 group-hover:brightness-110"
+                          />
+                        </div>
+                        <span className="w-12 text-right font-semibold text-slate-700">
+                          {act.frequency.toLocaleString()}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* right column: donut chart */}
+              <div className="space-y-4">
+                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                  Activity Volume Share
+                  <MetricTooltip text="relative percentage share of total event volume by activity." />
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center">
+                  
+                  {/* circular donut */}
+                  <div className="relative flex justify-center items-center h-44">
+                    <svg width="160" height="160" viewBox="0 0 160 160">
+                      {/* base grid circle */}
+                      <circle
+                        cx="80"
+                        cy="80"
+                        r="50"
+                        fill="transparent"
+                        stroke="#e2e8f0"
+                        strokeWidth="12"
+                      />
+                      {(() => {
+                        let accumulatedPercent = 0;
+                        // compute rotation angles in original order first to preserve positions
+                        const preparedSlices = donutData.map((slice, index) => {
+                          const circumference = 314.16;
+                          const strokeDasharray = `${(slice.percentage / 100) * circumference} ${circumference}`;
+                          // calculate rotation angle so each segment starts exactly where the previous ended
+                          const rotationAngle = -90 + (accumulatedPercent / 100) * 360;
+                          accumulatedPercent += slice.percentage;
+                          return {
+                            ...slice,
+                            index,
+                            strokeDasharray,
+                            rotationAngle,
+                          };
+                        });
+
+                        // sort so that the hovered slice is rendered last (on top of others)
+                        const sortedForRender = [...preparedSlices].sort((a, b) => {
+                          if (a.index === hoveredSlice) return 1;
+                          if (b.index === hoveredSlice) return -1;
+                          return 0;
+                        });
+
+                        return sortedForRender.map((slice) => {
+                          const color = sliceColors[slice.index % sliceColors.length];
+                          const isHovered = hoveredSlice === slice.index;
+
+                          return (
+                            <circle
+                              key={slice.name}
+                              cx="80"
+                              cy="80"
+                              r="50"
+                              fill="transparent"
+                              stroke={color}
+                              strokeWidth={isHovered ? "16" : "12"}
+                              style={{
+                                strokeDasharray: slice.strokeDasharray,
+                                strokeDashoffset: 0,
+                              }}
+                              transform={`rotate(${slice.rotationAngle} 80 80)`}
+                              className="transition-[stroke-width] duration-200 cursor-pointer"
+                              onMouseEnter={() => setHoveredSlice(slice.index)}
+                              onMouseLeave={() => setHoveredSlice(null)}
+                            />
+                          );
+                        });
+                      })()}
+                    </svg>
+                    
+                    {/* center info overlay */}
+                    <div className="absolute flex flex-col justify-center items-center pointer-events-none w-24 text-center">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider truncate max-w-full">
+                        {hoveredSlice !== null ? donutData[hoveredSlice].name : "Total Events"}
+                      </span>
+                      <strong className="text-base font-extrabold text-slate-800 mt-0.5">
+                        {hoveredSlice !== null 
+                          ? donutData[hoveredSlice].frequency.toLocaleString()
+                          : totalEvents.toLocaleString()}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* legend list */}
+                  <div className="space-y-1.5 justify-center flex flex-col">
+                    {donutData.map((slice, index) => {
+                      const color = sliceColors[index % sliceColors.length];
+                      const isHovered = hoveredSlice === index;
+                      return (
+                        <div
+                          key={slice.name}
+                          className={`flex items-center text-xs justify-between p-1 rounded transition-colors duration-150 ${
+                            isHovered ? "bg-white shadow-sm border border-slate-100" : "border border-transparent"
+                          }`}
+                          onMouseEnter={() => setHoveredSlice(index)}
+                          onMouseLeave={() => setHoveredSlice(null)}
+                        >
+                          <div className="flex items-center gap-2 truncate pr-1">
+                            <span
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="text-slate-600 font-medium truncate" title={slice.name}>
+                              {slice.name}
+                            </span>
+                          </div>
+                          <span className="text-slate-700 font-semibold flex-shrink-0">
+                            {slice.percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {selectedDashboard === "paths" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* left column: top 10 transitions bar chart */}
+              <div className="space-y-4">
+                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                  Top 10 Sequence Transitions
+                  <MetricTooltip text="shows the most frequent transitions between consecutive activities." />
+                </h4>
+                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
+                  {top10Transitions.length > 0 ? (
+                    top10Transitions.map((trans) => {
+                      const percent = (trans.count / maxTransitionCount) * 100;
+                      return (
+                        <div key={trans.id} className="flex items-center text-xs gap-3">
+                          <span
+                            className="w-36 text-slate-600 font-medium truncate flex items-center gap-1"
+                            title={`${trans.source} → ${trans.target}`}
+                          >
+                            <span className="truncate max-w-[64px]">{trans.source}</span>
+                            <span className="text-slate-400 text-[10px]">→</span>
+                            <span className="truncate max-w-[64px]">{trans.target}</span>
+                          </span>
+                          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
+                            <div
+                              style={{ width: `${percent}%` }}
+                              className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500 group-hover:brightness-110"
+                            />
+                          </div>
+                          <span className="w-12 text-right font-semibold text-slate-700">
+                            {trans.count.toLocaleString()}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-400">
+                      No transitions found
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* right column: toggleable start and end step donut chart */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                    Start & End Step Distribution
+                    <MetricTooltip text="distribution of activities that initiate or terminate cases." />
+                  </h4>
+                  {/* start/end step toggle buttons */}
+                  <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200">
+                    <button
+                      onClick={() => {
+                        setActiveTransitionType("start");
+                        setHoveredPathSlice(null);
+                      }}
+                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                        activeTransitionType === "start"
+                          ? "bg-white text-slate-800 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Start Steps
+                    </button>
+                    <button
+                      onClick={() => {
+                        setActiveTransitionType("end");
+                        setHoveredPathSlice(null);
+                      }}
+                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                        activeTransitionType === "end"
+                          ? "bg-white text-slate-800 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      End Steps
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center">
+                  
+                  {/* circular path donut */}
+                  <div className="relative flex justify-center items-center h-44">
+                    <svg width="160" height="160" viewBox="0 0 160 160">
+                      {/* base circle backdrop */}
+                      <circle
+                        cx="80"
+                        cy="80"
+                        r="50"
+                        fill="transparent"
+                        stroke="#e2e8f0"
+                        strokeWidth="12"
+                      />
+                      {(() => {
+                        let accumulatedPercent = 0;
+                        // pre-calculate segment rotation angles in sequence first
+                        const preparedSlices = pathDonutData.map((slice, index) => {
+                          const circumference = 314.16;
+                          const strokeDasharray = `${(slice.percentage / 100) * circumference} ${circumference}`;
+                          const rotationAngle = -90 + (accumulatedPercent / 100) * 360;
+                          accumulatedPercent += slice.percentage;
+                          return {
+                            ...slice,
+                            index,
+                            strokeDasharray,
+                            rotationAngle,
+                          };
+                        });
+
+                        // sort rendering circles to draw hovered slice last (on top)
+                        const sortedForRender = [...preparedSlices].sort((a, b) => {
+                          if (a.index === hoveredPathSlice) return 1;
+                          if (b.index === hoveredPathSlice) return -1;
+                          return 0;
+                        });
+
+                        return sortedForRender.map((slice) => {
+                          const color = sliceColors[slice.index % sliceColors.length];
+                          const isHovered = hoveredPathSlice === slice.index;
+
+                          return (
+                            <circle
+                              key={slice.name}
+                              cx="80"
+                              cy="80"
+                              r="50"
+                              fill="transparent"
+                              stroke={color}
+                              strokeWidth={isHovered ? "16" : "12"}
+                              style={{
+                                strokeDasharray: slice.strokeDasharray,
+                                strokeDashoffset: 0,
+                              }}
+                              transform={`rotate(${slice.rotationAngle} 80 80)`}
+                              className="transition-[stroke-width] duration-200 cursor-pointer"
+                              onMouseEnter={() => setHoveredPathSlice(slice.index)}
+                              onMouseLeave={() => setHoveredPathSlice(null)}
+                            />
+                          );
+                        });
+                      })()}
+                    </svg>
+                    
+                    {/* display hovered step name and absolute frequency inside circle */}
+                    <div className="absolute flex flex-col justify-center items-center pointer-events-none w-24 text-center">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider truncate max-w-full">
+                        {hoveredPathSlice !== null ? pathDonutData[hoveredPathSlice].name : "Total Cases"}
+                      </span>
+                      <strong className="text-base font-extrabold text-slate-800 mt-0.5">
+                        {hoveredPathSlice !== null 
+                          ? pathDonutData[hoveredPathSlice].frequency.toLocaleString()
+                          : totalPathCases.toLocaleString()}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* path legend list */}
+                  <div className="space-y-1.5 justify-center flex flex-col">
+                    {pathDonutData.length > 0 ? (
+                      pathDonutData.map((slice, index) => {
+                        const color = sliceColors[index % sliceColors.length];
+                        const isHovered = hoveredPathSlice === index;
+                        return (
+                          <div
+                            key={slice.name}
+                            className={`flex items-center text-xs justify-between p-1 rounded transition-colors duration-150 ${
+                              isHovered ? "bg-white shadow-sm border border-slate-100" : "border border-transparent"
+                            }`}
+                            onMouseEnter={() => setHoveredPathSlice(index)}
+                            onMouseLeave={() => setHoveredPathSlice(null)}
+                          >
+                            <div className="flex items-center gap-2 truncate pr-1">
+                              <span
+                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="text-slate-600 font-medium truncate" title={slice.name}>
+                                {slice.name}
+                              </span>
+                            </div>
+                            <span className="text-slate-700 font-semibold flex-shrink-0">
+                              {slice.percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-center text-slate-400 text-xs py-4">
+                        No steps recorded
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {selectedDashboard === "performance" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* left column: execution duration per activity (toggleable) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                    {activeDurationType === "average" ? "Average Duration" : "Median Duration"}
+                    <MetricTooltip text="shows the execution duration for the top 10 longest-running activities." />
+                  </h4>
+                  {/* average/median toggle buttons */}
+                  <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200">
+                    <button
+                      onClick={() => setActiveDurationType("average")}
+                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                        activeDurationType === "average"
+                          ? "bg-white text-slate-800 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Average
+                    </button>
+                    <button
+                      onClick={() => setActiveDurationType("median")}
+                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+                        activeDurationType === "median"
+                          ? "bg-white text-slate-800 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Median
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
+                  {top10Durations.length > 0 ? (
+                    top10Durations.map((act) => {
+                      const durationVal = activeDurationType === "average" ? act.averageDuration : act.medianDuration;
+                      const percent = (durationVal / maxDurationInTop10) * 100;
+                      return (
+                        <div key={act.name} className="flex items-center text-xs gap-3">
+                          <span
+                            className="w-28 text-slate-600 font-medium truncate"
+                            title={act.name}
+                          >
+                            {act.name}
+                          </span>
+                          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
+                            <div
+                              style={{ width: `${percent}%` }}
+                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500 group-hover:brightness-110"
+                            />
+                          </div>
+                          <span className="w-16 text-right font-semibold text-slate-700">
+                            {formatDuration(durationVal)}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-400">
+                      No duration data found
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* right column: branching complexity (incoming vs outgoing) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                    Branching Complexity (Entropy)
+                    <MetricTooltip text="predecessor and successor path entropy. lower values mean higher predictability (ideal for RPA)." />
+                  </h4>
+                  {/* legend for entropy types */}
+                  <div className="flex gap-3 text-[10px] font-bold">
+                    <span className="flex items-center gap-1 text-blue-600">
+                      <span className="w-2.5 h-2.5 bg-blue-500 rounded-sm" />
+                      In
+                    </span>
+                    <span className="flex items-center gap-1 text-purple-600">
+                      <span className="w-2.5 h-2.5 bg-purple-500 rounded-sm" />
+                      Out
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
+                  {top10Entropy.length > 0 ? (
+                    top10Entropy.map((act) => {
+                      const predPercent = (act.predecessorEntropy / maxEntropyValue) * 100;
+                      const succPercent = (act.successorEntropy / maxEntropyValue) * 100;
+                      return (
+                        <div key={act.name} className="flex items-start text-xs gap-3">
+                          <span
+                            className="w-28 text-slate-600 font-medium truncate pt-0.5"
+                            title={act.name}
+                          >
+                            {act.name}
+                          </span>
+                          
+                          {/* stacked predecessor and successor bars */}
+                          <div className="flex-1 space-y-1.5 pt-0.5">
+                            {/* predecessor bar */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden relative group">
+                                <div
+                                  style={{ width: `${predPercent}%` }}
+                                  className="h-full bg-blue-500 rounded-full transition-all duration-500 group-hover:brightness-115"
+                                />
+                              </div>
+                              <span className="w-8 text-right font-mono text-[10px] text-slate-500 font-medium">
+                                {act.predecessorEntropy.toFixed(2)}
+                              </span>
+                            </div>
+                            
+                            {/* successor bar */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden relative group">
+                                <div
+                                  style={{ width: `${succPercent}%` }}
+                                  className="h-full bg-purple-500 rounded-full transition-all duration-500 group-hover:brightness-115"
+                                />
+                              </div>
+                              <span className="w-8 text-right font-mono text-[10px] text-slate-500 font-medium">
+                                {act.successorEntropy.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-400">
+                      No entropy data found
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Details Panel (At the Bottom) */}
       <Card className="min-h-[200px] flex flex-col border shadow-md">
