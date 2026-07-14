@@ -45,9 +45,14 @@ export async function GET(
     if (cached && cached.updatedAt === processLog.updatedAt.getTime()) {
       graphData = cached.graphData;
     } else {
-      // 1. Fetch activities for this log
+      // 1. Fetch activities and their rule-based assessments for this log
       const activities = await prisma.activity.findMany({
         where: { processLogId },
+        include: {
+          assessments: {
+            where: { type: "RULE_BASED" },
+          },
+        },
       });
 
       // 2. Fetch traces and events sorted chronologically
@@ -110,15 +115,20 @@ export async function GET(
           frequency: traces.length,
           averageDuration: 0,
         },
-        ...activities.map((act) => ({
-          id: act.name,
-          name: act.name,
-          type: "activity",
-          frequency: act.frequency,
-          averageDuration: act.averageDuration,
-          caseCoverage: act.caseCoverage,
-          resourceCount: act.resourceCount,
-        })),
+        ...activities.map((act) => {
+          const ruleAssessment = act.assessments?.[0];
+          return {
+            id: act.name,
+            name: act.name,
+            type: "activity",
+            frequency: act.frequency,
+            averageDuration: act.averageDuration,
+            caseCoverage: act.caseCoverage,
+            resourceCount: act.resourceCount,
+            automationScore: ruleAssessment?.score ?? null,
+            automationLabel: ruleAssessment?.label ?? null,
+          };
+        }),
         {
           id: "__END__",
           name: "End",
@@ -214,7 +224,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Fetch transition graph error:", error);
+    console.error("error generating transition graph:", error);
     return NextResponse.json(
       { success: false, error: "Failed to generate transition graph" },
       { status: 500 }

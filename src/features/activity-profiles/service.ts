@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { XesLog } from "@/types/domain";
+import { AssessmentType, AutomationLabel } from "@/types/models";
 
 type ActivityStats = {
   name: string;
@@ -166,7 +167,10 @@ export async function calculateAndStoreActivityProfiles(
 
   // database ingestion transaction (increase timeout to 60s for large files)
   await prisma.$transaction(async (tx) => {
-    // 1. delete any existing traces for this process log (for clean overwrites)
+    // 1. delete any existing traces and assessments for this process log (for clean overwrites)
+    await tx.assessment.deleteMany({
+      where: { processLogId },
+    });
     await tx.trace.deleteMany({
       where: { processLogId },
     });
@@ -200,7 +204,7 @@ export async function calculateAndStoreActivityProfiles(
           activity: event.activity,
           resource: event.resource || null,
           timestamp: event.timestamp,
-          attributes: event.attributes || {},
+          attributes: (event.attributes || {}) as any,
         });
       }
     }
@@ -211,10 +215,111 @@ export async function calculateAndStoreActivityProfiles(
       });
     }
 
-    // 5. batch insert Activity Profiles
+    // 5. batch insert Activity Profiles and get created items
+    let activitiesCreated: any[] = [];
     if (activitiesData.length > 0) {
-      await tx.activity.createMany({
+      activitiesCreated = await tx.activity.createManyAndReturn({
         data: activitiesData,
+      });
+    }
+
+    // 6. calculate and store Rule-Based Assessments
+    if (activitiesCreated.length > 0) {
+      const maxFreq = Math.max(...activitiesCreated.map((a) => a.frequency), 1);
+      const maxAvgDuration = Math.max(...activitiesCreated.map((a) => a.averageDuration), 1);
+      const maxEntropy = Math.max(
+        ...activitiesCreated.map((a) => Math.max(a.predecessorEntropy, a.successorEntropy)),
+        1
+      );
+      const maxResourceEntropy = Math.max(...activitiesCreated.map((a) => a.resourceEntropy), 1);
+
+      const assessmentsData = [];
+
+      for (const act of activitiesCreated) {
+        // compute individual scores between 0.0 and 1.0
+        const scoreCoverage = act.caseCoverage;
+
+        const avgEntropy = (act.predecessorEntropy + act.successorEntropy) / 2;
+        const normalizedEntropy = maxEntropy > 0 ? avgEntropy / maxEntropy : 0;
+        const scoreComplexity = Math.max(0, 1 - normalizedEntropy);
+
+        const scoreDuration = Math.log(act.averageDuration + 1) / Math.log(maxAvgDuration + 1);
+        const scoreFrequency = Math.log(act.frequency + 1) / Math.log(maxFreq + 1);
+
+        const stdDev = Math.sqrt(act.durationVariance);
+        const cv = act.averageDuration > 0 ? stdDev / act.averageDuration : 0;
+        // cv closer to 0 indicates high predictability (exponential decay score)
+        const scorePredictability = Math.exp(-cv);
+
+        const normalizedResourceEntropy = maxResourceEntropy > 0 ? act.resourceEntropy / maxResourceEntropy : 0;
+        const scoreResource = Math.max(0, 1 - normalizedResourceEntropy);
+
+        // weighted formula using Delphi expert weights scaled to 100%
+        const score =
+          (scoreCoverage * 0.264 +
+            scoreComplexity * 0.241 +
+            scoreDuration * 0.195 +
+            scoreFrequency * 0.184 +
+            scorePredictability * 0.103 +
+            scoreResource * 0.013) *
+          100;
+
+        const finalScore = Math.round(score * 10) / 10;
+        const label = (finalScore >= 70 ? "HIGH" : finalScore >= 40 ? "MEDIUM" : "LOW") as AutomationLabel;
+
+        // generate dynamic, user-facing explanation paragraphs
+        const reasons = [];
+        if (act.caseCoverage >= 0.8) {
+          reasons.push(`is highly standardized, appearing in most cases (coverage: ${Math.round(act.caseCoverage * 100)}%)`);
+        } else if (act.caseCoverage < 0.4) {
+          reasons.push(`has low case coverage (${Math.round(act.caseCoverage * 100)}%), suggesting it is an optional or exceptional step`);
+        }
+
+        if (avgEntropy < 0.8) {
+          reasons.push("has low sequence branching complexity, representing a highly predictable operational path");
+        } else if (avgEntropy > 2.0) {
+          reasons.push("has high branching complexity, indicating many different preceding or succeeding activities");
+        }
+
+        if (act.frequency > maxFreq * 0.5) {
+          reasons.push(`is highly repetitive (frequency: ${act.frequency.toLocaleString()}x)`);
+        }
+
+        if (cv < 0.3 && act.averageDuration > 1000) {
+          reasons.push("exhibits highly predictable execution times");
+        } else if (cv > 1.5) {
+          reasons.push("has significant duration variance, representing inconsistent manual performance");
+        }
+
+        let reasoning = "";
+        if (reasons.length > 0) {
+          reasoning = `This activity ${reasons.join(", and ")}.`;
+        } else {
+          reasoning = "This activity has typical execution frequency and complexity patterns.";
+        }
+
+        if (finalScore >= 70) {
+          reasoning += " It is a prime candidate for robotic process automation due to its high predictability and volume.";
+        } else if (finalScore >= 40) {
+          reasoning += " It represents a moderate candidate for automation; standardizing its logic or reducing exceptions is recommended first.";
+        } else {
+          reasoning += " It is not recommended for automation in its current state due to high complexity, low frequency, or high variability.";
+        }
+
+        assessmentsData.push({
+          processLogId,
+          activityId: act.id,
+          type: "RULE_BASED" as AssessmentType,
+          score: finalScore,
+          label,
+          reasoning,
+          risks: [],
+          missingInfo: [],
+        });
+      }
+
+      await tx.assessment.createMany({
+        data: assessmentsData,
       });
     }
   }, {

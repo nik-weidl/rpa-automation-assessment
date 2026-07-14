@@ -50,12 +50,14 @@ const EndNode = memo(({ targetPosition }: NodeProps) => {
 });
 EndNode.displayName = "EndNode";
 
-interface ActivityNodeData {
+interface ActivityNodeData extends Record<string, unknown> {
   name: string;
   frequency: number;
   averageDuration: number;
   caseCoverage: number;
   resourceCount: number;
+  automationScore?: number | null;
+  automationLabel?: "LOW" | "MEDIUM" | "HIGH" | null;
 }
 
 const ActivityNode = memo(({
@@ -76,13 +78,45 @@ const ActivityNode = memo(({
     return `${days.toFixed(1)}d`;
   };
 
+  // determine color scheme based on automation potential
+  let cardStyles = "border-slate-400 bg-white text-slate-900";
+  let nameText = "text-slate-800";
+  let footerBorder = "border-slate-200";
+  let footerText = "text-slate-500";
+  let frequencyText = "text-slate-700";
+  let durationBadge = "bg-slate-100 text-slate-600";
+  
+  if (data.automationLabel === "HIGH") {
+    cardStyles = "border-emerald-500 bg-emerald-100/90 text-emerald-950 shadow-sm";
+    nameText = "text-emerald-900 font-bold";
+    footerBorder = "border-emerald-300/60";
+    footerText = "text-emerald-800";
+    frequencyText = "text-emerald-950 font-bold";
+    durationBadge = "bg-emerald-200 text-emerald-950 font-semibold";
+  } else if (data.automationLabel === "MEDIUM") {
+    cardStyles = "border-amber-500 bg-amber-100/90 text-amber-950 shadow-sm";
+    nameText = "text-amber-900 font-bold";
+    footerBorder = "border-amber-300/60";
+    footerText = "text-amber-800";
+    frequencyText = "text-amber-950 font-bold";
+    durationBadge = "bg-amber-200 text-amber-950 font-semibold";
+  } else if (data.automationLabel === "LOW") {
+    cardStyles = "border-rose-300 bg-rose-100/90 text-rose-950 shadow-sm";
+    nameText = "text-rose-900 font-bold";
+    footerBorder = "border-rose-300/60";
+    footerText = "text-rose-800";
+    frequencyText = "text-rose-950 font-bold";
+    durationBadge = "bg-rose-200 text-rose-950 font-semibold";
+  }
+
+  // selection highlight using scaling and a thick outline ring offset
+  const highlightStyles = selected
+    ? "scale-[1.04] z-50 shadow-xl outline outline-3 outline-offset-2 outline-blue-600"
+    : "hover:scale-[1.01] hover:shadow-md";
+
   return (
     <div
-      className={`relative flex flex-col justify-between p-2.5 h-24 w-56 rounded-lg border bg-white text-left transition-[border-color,box-shadow] duration-150 hover:shadow-md ${
-        selected
-          ? "border-blue-600 border-2 ring-1 ring-blue-100 shadow-sm bg-white"
-          : "border-slate-400 hover:border-slate-500 bg-white"
-      }`}
+      className={`relative flex flex-col justify-between p-2.5 h-24 w-56 rounded-lg border text-left transition-all duration-150 ${cardStyles} ${highlightStyles}`}
     >
       <Handle
         type="target"
@@ -97,20 +131,32 @@ const ActivityNode = memo(({
         className="w-1.5 h-1.5 !bg-slate-400"
       />
 
+      {data.automationScore !== undefined && data.automationScore !== null && (
+        <span className={`absolute top-1.5 right-1.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-sm ${
+          data.automationLabel === "HIGH"
+            ? "bg-emerald-200 text-emerald-950 border border-emerald-300"
+            : data.automationLabel === "MEDIUM"
+            ? "bg-amber-200 text-amber-950 border border-amber-300"
+            : "bg-rose-200 text-rose-950 border border-rose-300"
+        }`}>
+          {data.automationScore}%
+        </span>
+      )}
+
       {/* Centered Activity Name */}
       <div className="flex-1 flex items-center justify-center mt-1.5 mb-1">
-        <p className="text-center text-xs font-semibold text-slate-800 line-clamp-2 px-1 max-h-[32px] overflow-hidden leading-tight" title={data.name}>
+        <p className={`text-center text-xs font-semibold line-clamp-2 px-1 max-h-[32px] overflow-hidden leading-tight ${nameText}`} title={data.name}>
           {data.name}
         </p>
       </div>
 
       {/* Metrics Footer */}
-      <div className="flex justify-between items-center text-[9px] text-slate-500 border-t border-slate-200 pt-1.5 px-0.5">
-        <span className="font-semibold text-slate-700">{data.frequency.toLocaleString()}x</span>
-        <span className="font-mono text-slate-600 bg-slate-100 px-1 py-0.25 rounded text-[8px]">
+      <div className={`flex justify-between items-center text-[9px] border-t pt-1.5 px-0.5 ${footerBorder} ${footerText}`}>
+        <span className={`font-semibold ${frequencyText}`}>{data.frequency.toLocaleString()}x</span>
+        <span className={`font-mono px-1 py-0.25 rounded text-[8px] ${durationBadge}`}>
           {formatDuration(data.averageDuration)}
         </span>
-        <span className="text-[8px] font-medium opacity-80">Cov: {(data.caseCoverage * 100).toFixed(0)}%</span>
+        <span className="text-[8px] font-medium opacity-90">Cov: {(data.caseCoverage * 100).toFixed(0)}%</span>
       </div>
     </div>
   );
@@ -177,8 +223,8 @@ interface ProcessGraphProps {
 }
 
 export default function ProcessGraph({ processLogId, onNodeSelect }: ProcessGraphProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [direction, setDirection] = useState<"TB" | "LR">("LR");

@@ -4,13 +4,14 @@ import { useState, memo, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProcessLog, Activity } from "@/types/models";
+import { ProcessLog, Activity, Assessment } from "@/types/models";
 import ProcessGraph from "@/features/visualization/ProcessGraph";
 import { Clock, Users, ArrowRightLeft, Info } from "lucide-react";
 
 interface ProcessLogDetailsClientProps {
   processLog: ProcessLog & {
     activities: Activity[];
+    assessments: Assessment[];
   };
 }
 
@@ -87,8 +88,89 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     return `${days.toFixed(1)}d`;
   };
 
+  // helper to calculate suitability sub-scores for breakdown visualization
+  const getSubScores = (act: Activity) => {
+    const uniqueActivitiesCount = processLog.activities.length;
+
+    // 1. standardization: case coverage (26.4%)
+    const scoreCoverage = act.caseCoverage;
+
+    // 2. complexity: path entropy (24.1%)
+    const complexityEntropy = (act.predecessorEntropy + act.successorEntropy) / 2;
+    const maxExpectedEntropy = Math.log2(Math.max(2, uniqueActivitiesCount));
+    const scoreComplexity = Math.max(0, 1 - (maxExpectedEntropy > 0 ? complexityEntropy / maxExpectedEntropy : 0));
+
+    // 3. time-consuming: execution duration (19.5%)
+    const avgSec = act.averageDuration / 1000;
+    const logDuration = avgSec > 0 ? Math.log10(avgSec + 1) : 0;
+    const scoreDuration = Math.min(1, logDuration / 5);
+
+    // 4. repetitiveness: total execution frequency (18.4%)
+    const logFreq = Math.log10(act.frequency + 1);
+    const scoreFrequency = Math.min(1, logFreq / 4);
+
+    // 5. predictability: duration variance (10.3%)
+    const stdDev = Math.sqrt(act.durationVariance);
+    const cv = act.averageDuration > 0 ? stdDev / act.averageDuration : 0;
+    const scorePredictability = Math.exp(-cv);
+
+    // 6. resource fragmentation: resource entropy (1.3%)
+    const maxExpectedResourceEntropy = Math.log2(Math.max(2, act.resourceCount));
+    const scoreResource = maxExpectedResourceEntropy > 0
+      ? Math.max(0, 1 - act.resourceEntropy / maxExpectedResourceEntropy)
+      : 1;
+
+    return [
+      {
+        name: "Standardization",
+        desc: "measures how consistently this step appears across cases. high coverage minimizes custom variations.",
+        weight: 26.4,
+        score: scoreCoverage * 100,
+        value: `${(act.caseCoverage * 100).toFixed(0)}% coverage`,
+      },
+      {
+        name: "Complexity",
+        desc: "evaluates sequential branching. lower path entropy means a straightforward, standard process sequence.",
+        weight: 24.1,
+        score: scoreComplexity * 100,
+        value: `${complexityEntropy.toFixed(2)} entropy`,
+      },
+      {
+        name: "Time-consuming",
+        desc: "assesses potential time savings. longer steps yield higher automation benefits.",
+        weight: 19.5,
+        score: scoreDuration * 100,
+        value: formatDuration(act.averageDuration),
+      },
+      {
+        name: "Repetitiveness",
+        desc: "counts total occurrences. highly frequent steps maximize RPA return on investment.",
+        weight: 18.4,
+        score: scoreFrequency * 100,
+        value: `${act.frequency.toLocaleString()}x executions`,
+      },
+      {
+        name: "Predictability",
+        desc: "analyzes duration variance. low duration coefficient of variation indicates standardized, predictable execution.",
+        weight: 10.3,
+        score: scorePredictability * 100,
+        value: `CV: ${cv.toFixed(2)}`,
+      },
+      {
+        name: "Resource Specialization",
+        desc: "examines task allocation. lower resource entropy implies a small, specialized group handles it.",
+        weight: 1.3,
+        score: scoreResource * 100,
+        value: `${act.resourceCount} resources`,
+      },
+    ];
+  };
+
   // find the selected activity details from the process log relation
   const activity = processLog.activities.find((act) => act.name === selectedActivity);
+  const activityAssessment = selectedActivity && processLog.assessments
+    ? processLog.assessments.find((a) => a.activityId === activity?.id && a.type === "RULE_BASED")
+    : null;
 
   // sort and filter activity statistics for the dashboard
   const sortedActivities = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
@@ -775,7 +857,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   </span>
                   <h3 className="text-xl font-bold text-slate-800 break-all mt-0.5">{activity.name}</h3>
                 </div>
-                <div className="flex gap-4 text-sm">
+                <div className="flex flex-wrap gap-4 text-sm">
                   <div className="bg-slate-50 border px-3 py-1.5 rounded-md">
                     <span className="text-xs text-slate-500 flex items-center font-medium">
                       Frequency
@@ -790,8 +872,84 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                     </span>
                     <strong className="text-slate-800 text-base">{(activity.caseCoverage * 100).toFixed(1)}%</strong>
                   </div>
+                  {activityAssessment && (
+                    <div className="bg-slate-50 border px-3 py-1.5 rounded-md flex flex-col justify-between">
+                      <span className="text-xs text-slate-500 flex items-center font-medium">
+                        Automation Potential
+                        <MetricTooltip text="rule-based feasibility score calculated from repetition, standardized paths, predictability, and duration." align="right" position="bottom" />
+                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <strong className="text-slate-800 text-base">{activityAssessment.score}%</strong>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          activityAssessment.label === "HIGH"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : activityAssessment.label === "MEDIUM"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-rose-100 text-rose-800"
+                        }`}>
+                          {activityAssessment.label}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* rule-based reasoning block */}
+              {activityAssessment && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs leading-relaxed space-y-1">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                    Rule-Based Feasibility Analysis
+                  </div>
+                  <p>{activityAssessment.reasoning}</p>
+                </div>
+              )}
+
+              {/* suitability score breakdown grid */}
+              {activityAssessment && (
+                <div className="space-y-3">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                    Suitability Score Breakdown
+                    <MetricTooltip text="shows the normalized scores and relative contributions of the six Delphi expert parameters used to calculate the automation potential." />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 border rounded-lg">
+                    {getSubScores(activity).map((param) => {
+                      const contribution = (param.score * (param.weight / 100)).toFixed(1);
+                      return (
+                        <div key={param.name} className="space-y-1.5 text-xs">
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="font-semibold text-slate-700 flex items-center gap-1">
+                              {param.name}
+                              <MetricTooltip text={param.desc} />
+                            </span>
+                            <span className="text-slate-500 font-mono text-[10px]">
+                              weight: {param.weight}% | contr: +{contribution}%
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${param.score}%` }}
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  param.score >= 70
+                                    ? "bg-emerald-500"
+                                    : param.score >= 40
+                                    ? "bg-amber-500"
+                                    : "bg-rose-500"
+                                }`}
+                              />
+                            </div>
+                            <span className="w-24 text-right font-medium text-slate-600 text-[10px] truncate" title={param.value}>
+                              {param.value}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* 3-column metrics grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

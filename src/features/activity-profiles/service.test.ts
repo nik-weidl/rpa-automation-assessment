@@ -166,4 +166,18 @@ test("calculateAndStoreActivityProfiles correctly ingests and computes metrics",
   expect(profileC!.resourceCount).toBe(1);
   expect(profileC!.resources).toContain("Res2");
   expect(profileC!.resourceEntropy).toBe(0);
+
+  // 3. verify rule-based assessments calculated and persisted
+  const assessments = await prisma.assessment.findMany({
+    where: { processLogId: testLogId },
+  });
+  expect(assessments.length).toBe(3);
+
+  const assessmentA = assessments.find((a) => a.activityId === profileA!.id);
+  expect(assessmentA).toBeDefined();
+  expect(assessmentA!.type).toBe("RULE_BASED");
+  expect(assessmentA!.score).toBeGreaterThanOrEqual(0);
+  expect(assessmentA!.score).toBeLessThanOrEqual(100);
+  expect(assessmentA!.label).toBeDefined();
+  expect(assessmentA!.reasoning).toBeDefined();
 });

@@ -16,6 +16,7 @@ export default async function ProcessLogPage({ params }: PageProps) {
     where: { id: processId },
     include: {
       activities: true,
+      assessments: true,
     },
   });
 
