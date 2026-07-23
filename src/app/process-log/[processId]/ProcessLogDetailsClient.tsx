@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, memo, useEffect } from "react";
+import { useState, memo, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProcessLog, Activity, Assessment } from "@/types/models";
 import ProcessGraph from "@/features/visualization/ProcessGraph";
-import { Clock, Users, ArrowRightLeft, Info } from "lucide-react";
+import { Clock, Users, ArrowRightLeft, Info, Sparkles, AlertTriangle, HelpCircle, Loader2 } from "lucide-react";
+import { SUPPORTED_MODELS } from "@/features/automation-scoring/openrouter";
 
 interface ProcessLogDetailsClientProps {
   processLog: ProcessLog & {
@@ -55,12 +57,17 @@ const MetricTooltip = memo(({
 MetricTooltip.displayName = "MetricTooltip";
 
 export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetailsClientProps) {
+  const router = useRouter();
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
   const [selectedDashboard, setSelectedDashboard] = useState<string>("frequency");
   const [hoveredSlice, setHoveredSlice] = useState<number | null>(null);
   const [activeTransitionType, setActiveTransitionType] = useState<"start" | "end">("start");
   const [hoveredPathSlice, setHoveredPathSlice] = useState<number | null>(null);
   const [activeDurationType, setActiveDurationType] = useState<"average" | "median">("average");
+  const [selectedModel, setSelectedModel] = useState<string>("~google/gemini-pro-latest");
+  const [viewLlmModel, setViewLlmModel] = useState<string | null>(null);
+  const [evaluating, setEvaluating] = useState<boolean>(false);
+  const [evalError, setEvalError] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
 
   // fetch transition-graph data from API on mount to calculate path volumes
@@ -171,6 +178,67 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const activityAssessment = selectedActivity && processLog.assessments
     ? processLog.assessments.find((a) => a.activityId === activity?.id && a.type === "RULE_BASED")
     : null;
+
+  // resolve all LLM assessments for the selected activity
+  const activityLlmAssessments = selectedActivity && processLog.assessments && activity
+    ? processLog.assessments.filter(
+        (a) => a.activityId === activity.id && a.type === "LLM_SINGLE_SHOT"
+      )
+    : [];
+
+  // synchronize viewLlmModel state when selected activity or assessments collection changes
+  useEffect(() => {
+    if (activity && activityLlmAssessments.length > 0) {
+      // default to the active selected model if an assessment exists for it, otherwise fallback to the first available
+      const hasSelectedModel = activityLlmAssessments.some(a => a.model === selectedModel);
+      if (hasSelectedModel) {
+        setViewLlmModel(selectedModel);
+      } else {
+        setViewLlmModel(activityLlmAssessments[0].model);
+      }
+    } else {
+      setViewLlmModel(null);
+    }
+  }, [selectedActivity, processLog.assessments]);
+
+  // resolve currently viewed LLM assessment details based on selected tab
+  const llmAssessment = selectedActivity && processLog.assessments && viewLlmModel
+    ? processLog.assessments.find(
+        (a) => a.activityId === activity?.id && a.type === "LLM_SINGLE_SHOT" && a.model === viewLlmModel
+      )
+    : null;
+
+  // trigger on-demand single-shot LLM evaluation via POST API
+  const handleRunLlmEvaluation = async () => {
+    if (!activity) return;
+    setEvaluating(true);
+    setEvalError(null);
+
+    try {
+      const res = await fetch("/api/assessments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activityId: activity.id,
+          type: "LLM_SINGLE_SHOT",
+          model: selectedModel,
+        }),
+      });
+
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body.error || "failed to evaluate activity");
+      }
+
+      // refresh data from server component and rehydrate page props
+      router.refresh();
+    } catch (err: any) {
+      console.error("LLM evaluation error:", err);
+      setEvalError(err.message || "an error occurred during evaluation");
+    } finally {
+      setEvaluating(false);
+    }
+  };
 
   // sort and filter activity statistics for the dashboard
   const sortedActivities = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
@@ -875,8 +943,8 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   {activityAssessment && (
                     <div className="bg-slate-50 border px-3 py-1.5 rounded-md flex flex-col justify-between">
                       <span className="text-xs text-slate-500 flex items-center font-medium">
-                        Automation Potential
-                        <MetricTooltip text="rule-based feasibility score calculated from repetition, standardized paths, predictability, and duration." align="right" position="bottom" />
+                        Rule-Based Automation Potential
+                        <MetricTooltip text="rule-based feasibility score calculated using the Delphi consensus weights of Farinha et al. (2024)." align="right" position="bottom" />
                       </span>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <strong className="text-slate-800 text-base">{activityAssessment.score}%</strong>
@@ -892,6 +960,35 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                       </div>
                     </div>
                   )}
+                  <div className="bg-slate-50 border px-3 py-1.5 rounded-md flex flex-col justify-between">
+                    <span className="text-xs text-slate-500 flex items-center font-medium">
+                      LLM Automation Potential
+                      <MetricTooltip text="semantic and cognitive feasibility score evaluated using a generative AI LLM on OpenRouter." align="right" position="bottom" />
+                    </span>
+                    {llmAssessment ? (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <strong className="text-slate-800 text-base">{llmAssessment.score}%</strong>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          llmAssessment.label === "HIGH"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : llmAssessment.label === "MEDIUM"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-rose-100 text-rose-800"
+                        }`}>
+                          {llmAssessment.label}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium ml-1">
+                          via {llmAssessment.model ? (SUPPORTED_MODELS.find(m => m.id === llmAssessment.model)?.name || llmAssessment.model.split("/").pop()) : "Unknown"}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center mt-1">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                          NOT EVALUATED
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1078,6 +1175,191 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   </div>
                 </div>
 
+              </div>
+
+              {/* LLM Semantic Feasibility Analysis */}
+              <div className="border-t pt-6 space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h4 className="font-semibold text-slate-800 text-sm flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-blue-500" />
+                    LLM Feasibility Analysis
+                  </h4>
+                  {llmAssessment && (
+                    <span className="text-[10px] text-slate-500 font-medium font-mono">
+                      model: {llmAssessment.model}
+                    </span>
+                  )}
+                </div>
+
+                {evalError && (
+                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-lg font-medium">
+                    {evalError}
+                  </div>
+                )}
+
+                {llmAssessment ? (
+                  <div className="space-y-4">
+                    {/* model evaluation tabs */}
+                    {activityLlmAssessments.length > 1 && (
+                      <div className="flex flex-wrap gap-1.5 border-b pb-2">
+                        {activityLlmAssessments.map((asm) => {
+                          const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
+                          const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
+                          const isSelected = viewLlmModel === asm.model;
+                          return (
+                            <button
+                              key={asm.id}
+                              onClick={() => setViewLlmModel(asm.model)}
+                              className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 ${
+                                isSelected
+                                  ? "bg-blue-600 text-white border-blue-600 font-semibold shadow-sm"
+                                  : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                              }`}
+                            >
+                              {displayName} ({asm.score}%)
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* reasoning block */}
+                    <div className="p-4 bg-blue-50/40 border border-blue-100 rounded-lg text-slate-700 text-xs leading-relaxed space-y-1">
+                      <div className="text-[10px] uppercase font-bold tracking-wider text-blue-600">
+                        AI Assessment Reasoning
+                      </div>
+                      <p>{llmAssessment.reasoning}</p>
+                    </div>
+
+                    {/* risks & missing info columns */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* column 1: risks */}
+                      <div className="space-y-2">
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-rose-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          Identified Automation Risks
+                        </div>
+                        <div className="bg-rose-50/20 border border-rose-100 p-3 rounded-lg text-xs min-h-[100px] flex flex-col justify-start">
+                          {llmAssessment.risks.length > 0 ? (
+                            <ul className="list-disc pl-4 space-y-1.5 text-slate-700">
+                              {llmAssessment.risks.map((risk, index) => (
+                                <li key={index}>{risk}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-slate-400 italic my-auto text-center">No major risks identified</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* column 2: missing info */}
+                      <div className="space-y-2">
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-amber-600 flex items-center gap-1">
+                          <HelpCircle className="w-3.5 h-3.5" />
+                          Missing Information Requirements
+                        </div>
+                        <div className="bg-amber-50/20 border border-amber-100 p-3 rounded-lg text-xs min-h-[100px] flex flex-col justify-start">
+                          {llmAssessment.missingInfo.length > 0 ? (
+                            <ul className="list-disc pl-4 space-y-1.5 text-slate-700">
+                              {llmAssessment.missingInfo.map((info, index) => (
+                                <li key={index}>{info}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-slate-400 italic my-auto text-center">No missing details required</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* API metadata & re-evaluate options */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-50 p-3 rounded-lg border gap-3">
+                      <div className="flex flex-wrap gap-4 text-[10px] text-slate-500 font-mono">
+                        {llmAssessment.latencyMs !== null && (
+                          <div>
+                            latency: <strong className="text-slate-700">{(llmAssessment.latencyMs / 1000).toFixed(2)}s</strong>
+                          </div>
+                        )}
+                        {llmAssessment.costUsd !== null && (
+                          <div>
+                            cost: <strong className="text-slate-700">${llmAssessment.costUsd.toFixed(5)}</strong>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <select
+                          disabled={evaluating}
+                          value={selectedModel}
+                          onChange={(e) => setSelectedModel(e.target.value)}
+                          className="bg-white border rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                          {SUPPORTED_MODELS.map((model) => (
+                            <option key={model.id} value={model.id}>
+                              {model.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          disabled={evaluating}
+                          onClick={handleRunLlmEvaluation}
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50 font-medium shrink-0"
+                        >
+                          {evaluating ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Re-evaluating...
+                            </>
+                          ) : (
+                            "Re-evaluate"
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 bg-blue-50/30 p-4 border border-blue-100 rounded-lg">
+                    <div className="flex-1 space-y-1">
+                      <h5 className="font-semibold text-xs text-blue-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                        Run LLM Automation Feasibility Assessment
+                      </h5>
+                      <p className="text-xs text-blue-700/80 leading-normal">
+                        uses generative AI to analyze the activity label semantically, checking cognitive complexity, manual rule density, OCR needs, and potential business exceptions.
+                      </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-stretch gap-2 shrink-0">
+                      <select
+                        disabled={evaluating}
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="bg-white border rounded px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                      >
+                        {SUPPORTED_MODELS.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        disabled={evaluating}
+                        onClick={handleRunLlmEvaluation}
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white h-8"
+                      >
+                        {evaluating ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                            Evaluate Activity
+                          </>
+                        ) : (
+                          "Evaluate Activity"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
