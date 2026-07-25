@@ -151,6 +151,34 @@ function cleanAndParseJson(content: string): any {
   }
 }
 
+function estimateLlmCost(modelId: string, promptTokens: number, completionTokens: number): number {
+  const model = modelId.startsWith("~") ? modelId.slice(1) : modelId;
+  
+  // prices per 1M tokens (input / output)
+  let inputRate = 0;
+  let outputRate = 0;
+
+  if (model.includes("gemini-pro") || model.includes("gemini-flash")) {
+    inputRate = 0.075;
+    outputRate = 0.30;
+  } else if (model.includes("claude-sonnet") || model.includes("claude-3-5-sonnet")) {
+    inputRate = 3.00;
+    outputRate = 15.00;
+  } else if (model.includes("gpt-latest") || model.includes("gpt-4o")) {
+    inputRate = 5.00;
+    outputRate = 15.00;
+  } else if (model.includes("gpt-mini") || model.includes("gpt-4o-mini")) {
+    inputRate = 0.15;
+    outputRate = 0.60;
+  } else if (model.includes("claude-3-haiku")) {
+    inputRate = 0.25;
+    outputRate = 1.25;
+  }
+
+  const cost = (promptTokens * inputRate + completionTokens * outputRate) / 1_000_000;
+  return cost;
+}
+
 /**
  * evaluates a process activity's automation potential using single-shot LLM prompts
  */
@@ -247,7 +275,7 @@ You must output a strict JSON object with this format, containing no other text:
       risks,
       missingInfo,
       latencyMs: llmResult.latencyMs,
-      costUsd: llmResult.costUsd,
+      costUsd: llmResult.costUsd ?? estimateLlmCost(model, llmResult.tokens.prompt, llmResult.tokens.completion),
       rawResponse: parsedResponse as any,
     },
   });

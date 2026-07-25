@@ -60,6 +60,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const router = useRouter();
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
   const [selectedDashboard, setSelectedDashboard] = useState<string>("frequency");
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
   const [hoveredSlice, setHoveredSlice] = useState<number | null>(null);
   const [activeTransitionType, setActiveTransitionType] = useState<"start" | "end">("start");
   const [hoveredPathSlice, setHoveredPathSlice] = useState<number | null>(null);
@@ -103,6 +104,40 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     if (hours < 24) return `${hours.toFixed(1)}h`;
     const days = hours / 24;
     return `${days.toFixed(1)}d`;
+  };
+
+  // helper to estimate and format token cost for display in cents, falling back to local calculation if null
+  const formatCost = (costUsd: number | null | undefined, modelId: string | null | undefined) => {
+    if (costUsd !== null && costUsd !== undefined) {
+      const cents = costUsd * 100;
+      return `${cents.toFixed(4)}¢`;
+    }
+    if (!modelId) return "n/a";
+    // approximate fallback based on average prompt length (650 tokens) and completion length (250 tokens)
+    const id = modelId.startsWith("~") ? modelId.slice(1) : modelId;
+    let inputRate = 0;
+    let outputRate = 0;
+
+    if (id.includes("gemini-pro") || id.includes("gemini-flash")) {
+      inputRate = 0.075;
+      outputRate = 0.30;
+    } else if (id.includes("claude-sonnet")) {
+      inputRate = 3.00;
+      outputRate = 15.00;
+    } else if (id.includes("gpt-latest")) {
+      inputRate = 5.00;
+      outputRate = 15.00;
+    } else if (id.includes("gpt-mini")) {
+      inputRate = 0.15;
+      outputRate = 0.60;
+    } else if (id.includes("haiku")) {
+      inputRate = 0.25;
+      outputRate = 1.25;
+    }
+
+    const estimatedUsd = (650 * inputRate + 250 * outputRate) / 1_000_000;
+    const estimatedCents = estimatedUsd * 100;
+    return `~${estimatedCents.toFixed(4)}¢`;
   };
 
   // helper to calculate suitability sub-scores for breakdown visualization
@@ -590,6 +625,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
             <option value="frequency">Activity Frequency Analysis</option>
             <option value="paths">Transition Path Analysis</option>
             <option value="performance">Performance & Standardization</option>
+            <option value="comparison">LLM Feasibility Comparison Matrix</option>
           </select>
         </CardHeader>
         <CardContent className="p-6">
@@ -1093,6 +1129,174 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
 
             </div>
           )}
+
+          {selectedDashboard === "comparison" && (
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-slate-50 p-4 border border-slate-200 rounded-lg">
+                <div>
+                  <h4 className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1">
+                    Feasibility Scoring Matrix
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Compare automation scores across rule-based criteria and all evaluated AI models side-by-side.
+                  </p>
+                </div>
+                
+                {/* model summary stats */}
+                {(() => {
+                  const totalLlmCostUsd = processLog.assessments
+                    ? processLog.assessments
+                        .filter((a) => a.type === "LLM_SINGLE_SHOT" && a.costUsd !== null && a.costUsd !== undefined)
+                        .reduce((sum, a) => sum + (a.costUsd || 0), 0)
+                    : 0;
+
+                  return (
+                    <div className="text-[10px] text-slate-500 font-semibold bg-white border rounded px-3 py-2 shadow-xs space-y-1">
+                      <div>Evaluated Steps: <span className="text-slate-800 font-bold">{processLog.activities.length}</span></div>
+                      <div>AI Models Stored: <span className="text-slate-800 font-bold">
+                        {new Set(processLog.assessments.filter(a => a.type === "LLM_SINGLE_SHOT").map(a => a.model)).size}
+                      </span></div>
+                      {totalLlmCostUsd > 0 && (
+                        <div>Total LLM Cost: <span className="text-slate-800 font-bold">{formatCost(totalLlmCostUsd, null)}</span></div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="overflow-x-auto border rounded-lg bg-white shadow-sm">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
+                      <th className="py-3 px-4 font-bold">Activity Name</th>
+                      <th className="py-3 px-4 font-bold text-center">Frequency</th>
+                      <th className="py-3 px-4 font-bold text-center border-l bg-slate-50/20">Rule-Based</th>
+                      
+                      {SUPPORTED_MODELS.map((model) => (
+                        <th key={model.id} className="py-3 px-4 font-bold text-center border-l">
+                          {model.name.replace(" (Latest)", "")}
+                        </th>
+                      ))}
+                      
+                      <th className="py-3 px-4 font-bold text-center border-l bg-slate-50/20">Spread</th>
+                      <th className="py-3 px-4 font-bold text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {processLog.activities.map((act) => {
+                      // get rule-based assessment
+                      const ruleAsm = processLog.assessments.find(
+                        (a) => a.activityId === act.id && a.type === "RULE_BASED"
+                      );
+                      
+                      // get LLM assessments
+                      const modelAssessments: { [modelId: string]: any } = {};
+                      const activeScores: number[] = [];
+                      
+                      SUPPORTED_MODELS.forEach((model) => {
+                        const asm = processLog.assessments.find(
+                          (a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id
+                        );
+                        modelAssessments[model.id] = asm;
+                        if (asm) {
+                          activeScores.push(asm.score);
+                        }
+                      });
+
+                      // calculate min/max spread
+                      const spread = activeScores.length > 1 
+                        ? Math.max(...activeScores) - Math.min(...activeScores)
+                        : null;
+
+                      const getScoreColor = (score: number | null) => {
+                        if (score === null) return "text-slate-400 bg-slate-50 border-slate-200";
+                        if (score >= 70) return "text-emerald-700 bg-emerald-50 border-emerald-200 font-bold";
+                        if (score >= 35) return "text-amber-700 bg-amber-50 border-amber-200 font-bold";
+                        return "text-rose-700 bg-rose-50 border-rose-200 font-bold";
+                      };
+
+                      return (
+                        <tr key={act.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-3 px-4 font-semibold text-slate-800 max-w-[200px] truncate" title={act.name}>
+                            {act.name}
+                          </td>
+                          <td className="py-3 px-4 text-center font-semibold text-slate-600">
+                            {act.frequency.toLocaleString()}x
+                          </td>
+                          
+                          {/* rule-based score */}
+                          <td className="py-3 px-4 text-center border-l bg-slate-50/10 font-bold">
+                            {ruleAsm ? (
+                              <span className={`inline-block px-2 py-1.5 rounded-md border text-[11px] min-w-[40px] text-center ${getScoreColor(ruleAsm.score)}`}>
+                                {ruleAsm.score}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-normal">—</span>
+                            )}
+                          </td>
+
+                          {/* LLM model scores */}
+                          {SUPPORTED_MODELS.map((model) => {
+                            const asm = modelAssessments[model.id];
+                            const score = asm ? asm.score : null;
+                            return (
+                              <td key={model.id} className="py-3 px-4 text-center border-l">
+                                {score !== null ? (
+                                  <span 
+                                    title={`Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
+                                    className={`inline-block px-2 py-1.5 rounded-md border text-[11px] min-w-[40px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
+                                  >
+                                    {score}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-normal">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          {/* spread (agreement measure) */}
+                          <td className="py-3 px-4 text-center border-l bg-slate-50/10 font-bold">
+                            {spread !== null ? (
+                              <span className={`inline-block px-2 py-0.75 rounded-md text-[10px] min-w-[32px] text-center ${
+                                spread > 25
+                                  ? "bg-rose-100 text-rose-800 border border-rose-200 font-extrabold"
+                                  : spread > 10
+                                  ? "bg-amber-100 text-amber-800 border border-amber-200 font-bold"
+                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              }`} title={spread > 25 ? "High disagreement between AI models" : undefined}>
+                                ±{spread}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-normal">—</span>
+                            )}
+                          </td>
+
+                          {/* actions */}
+                          <td className="py-3 px-4 text-center">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedActivity(act.name);
+                                // if they have at least 2 LLM assessments, open the side-by-side comparative inspector
+                                if (activeScores.length >= 2) {
+                                  setIsCompareModalOpen(true);
+                                }
+                              }}
+                              className="text-[10px] h-6 px-2.5 font-semibold gap-1 border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs"
+                            >
+                              Compare
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1390,26 +1594,39 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 {llmAssessment ? (
                   <div className="space-y-4">
                     {/* model evaluation tabs */}
+                    {/* model evaluation tabs and comparison workbench trigger */}
                     {activityLlmAssessments.length > 1 && (
-                      <div className="flex flex-wrap gap-1.5 border-b pb-2">
-                        {activityLlmAssessments.map((asm) => {
-                          const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
-                          const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
-                          const isSelected = viewLlmModel === asm.model;
-                          return (
-                            <button
-                              key={asm.id}
-                              onClick={() => setViewLlmModel(asm.model)}
-                              className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 ${
-                                isSelected
-                                  ? "bg-blue-600 text-white border-blue-600 font-semibold shadow-sm"
-                                  : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                              }`}
-                            >
-                              {displayName} ({asm.score}%)
-                            </button>
-                          );
-                        })}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                        {/* model selection tabs */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {activityLlmAssessments.map((asm) => {
+                            const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
+                            const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
+                            const isSelected = viewLlmModel === asm.model;
+                            return (
+                              <button
+                                key={asm.id}
+                                onClick={() => setViewLlmModel(asm.model)}
+                                className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 ${
+                                  isSelected
+                                    ? "bg-blue-600 text-white border-blue-600 font-semibold shadow-sm"
+                                    : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
+                                }`}
+                              >
+                                {displayName} ({asm.score}%)
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsCompareModalOpen(true)}
+                          className="text-[10px] h-6 px-2 font-bold border-blue-100 text-blue-700 bg-blue-50/50 hover:bg-blue-100 flex items-center gap-1 shadow-xs"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-blue-500" />
+                          Compare
+                        </Button>
                       </div>
                     )}
                     {/* reasoning block */}
@@ -1469,11 +1686,9 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                             latency: <strong className="text-slate-700">{(llmAssessment.latencyMs / 1000).toFixed(2)}s</strong>
                           </div>
                         )}
-                        {llmAssessment.costUsd !== null && (
-                          <div>
-                            cost: <strong className="text-slate-700">${llmAssessment.costUsd.toFixed(5)}</strong>
-                          </div>
-                        )}
+                        <div>
+                          cost: <strong className="text-slate-700">{formatCost(llmAssessment.costUsd, llmAssessment.model)}</strong>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -1562,6 +1777,138 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           )}
         </CardContent>
       </Card>
+      {/* Side-by-Side Comparison Modal */}
+      {isCompareModalOpen && activity && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-200"
+          onClick={() => setIsCompareModalOpen(false)}
+        >
+          <div 
+            className="bg-white border rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* modal header */}
+            <div className="flex items-center justify-between p-5 border-b bg-slate-50/50">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <span className="bg-blue-100 text-blue-800 text-[10px] uppercase px-2 py-0.5 rounded font-extrabold">Comparative Workbench</span>
+                  Activity Evaluation: <span className="text-blue-700">"{activity.name}"</span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Side-by-side semantic and scoring breakdown across all evaluated LLM models.
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsCompareModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 bg-white border p-1.5 rounded-lg transition-colors hover:shadow-xs"
+              >
+                <span className="text-xs font-bold px-1">Close [X]</span>
+              </button>
+            </div>
+
+            {/* modal body columns */}
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
+              {activityLlmAssessments.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-sm">
+                  No LLM assessments calculated for this activity yet. Run evaluations to compare models.
+                </div>
+              ) : (
+                <div className={`grid grid-cols-1 md:grid-cols-${Math.min(activityLlmAssessments.length, 3)} gap-6`}>
+                  {activityLlmAssessments.map((asm) => {
+                    const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
+                    const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
+                    
+                    const scoreColor = asm.score >= 70 
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                      : asm.score >= 35
+                      ? "border-amber-200 bg-amber-50 text-amber-950"
+                      : "border-rose-200 bg-rose-50 text-rose-950";
+
+                    const badgeColor = asm.score >= 70
+                      ? "bg-emerald-500 text-white"
+                      : asm.score >= 35
+                      ? "bg-amber-500 text-white"
+                      : "bg-rose-500 text-white";
+
+                    return (
+                      <div key={asm.id} className="flex flex-col bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                        {/* model header */}
+                        <div className={`p-4 border-b flex items-center justify-between ${scoreColor}`}>
+                          <div>
+                            <h4 className="font-bold text-xs tracking-wide uppercase text-slate-800">
+                              {displayName}
+                            </h4>
+                            <p className="text-[9px] text-slate-500 font-semibold mt-0.5">
+                              Latency: {asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: {formatCost(asm.costUsd, asm.model)}
+                            </p>
+                          </div>
+                          <span className={`text-xs font-black px-2.5 py-1 rounded-full shadow-xs ${badgeColor}`}>
+                            {asm.score}% {asm.label}
+                          </span>
+                        </div>
+
+                        {/* model content */}
+                        <div className="p-4 flex-1 space-y-5 overflow-y-auto">
+                          {/* reasoning */}
+                          <div className="space-y-1.5">
+                            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              AI Reasoning
+                            </h5>
+                            <p className="text-slate-700 text-xs leading-relaxed bg-slate-50/50 p-3 rounded-lg border border-slate-100 min-h-[100px]">
+                              {asm.reasoning}
+                            </p>
+                          </div>
+
+                          {/* risks */}
+                          <div className="space-y-2">
+                            <h5 className="text-[10px] font-bold text-rose-500 uppercase tracking-wider flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Identified Risks ({asm.risks?.length || 0})
+                            </h5>
+                            <ul className="space-y-1.5 pl-4 list-disc text-slate-600 text-xs">
+                              {asm.risks && asm.risks.length > 0 ? (
+                                asm.risks.map((r, i) => <li key={i}>{r}</li>)
+                              ) : (
+                                <li className="list-none text-slate-400 font-medium italic -ml-4">No risks identified.</li>
+                              )}
+                            </ul>
+                          </div>
+
+                          {/* missing info */}
+                          <div className="space-y-2">
+                            <h5 className="text-[10px] font-bold text-blue-500 uppercase tracking-wider flex items-center gap-1">
+                              <HelpCircle className="w-3 h-3" />
+                              Missing Information Requirements ({asm.missingInfo?.length || 0})
+                            </h5>
+                            <ul className="space-y-1.5 pl-4 list-disc text-slate-600 text-xs">
+                              {asm.missingInfo && asm.missingInfo.length > 0 ? (
+                                asm.missingInfo.map((m, i) => <li key={i}>{m}</li>)
+                              ) : (
+                                <li className="list-none text-slate-400 font-medium italic -ml-4">No missing information noted.</li>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* modal footer */}
+            <div className="p-4 border-t bg-slate-50 flex items-center justify-between text-[10px] text-slate-500 font-medium px-6">
+              <span>Comparing {activityLlmAssessments.length} models for "{activity.name}".</span>
+              <button 
+                onClick={() => setIsCompareModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-xs"
+              >
+                Close Workbench
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
