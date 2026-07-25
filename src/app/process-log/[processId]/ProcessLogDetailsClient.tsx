@@ -1,14 +1,23 @@
 "use client";
 
-import { useState, memo, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProcessLog, Activity, Assessment } from "@/types/models";
 import ProcessGraph from "@/features/visualization/ProcessGraph";
-import { Clock, Users, ArrowRightLeft, Info, Sparkles, AlertTriangle, HelpCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { SUPPORTED_MODELS } from "@/features/automation-scoring/openrouter";
+import { calculateLlmCost } from "@/features/automation-scoring/utils";
+
+// import sub-components
+import { MetricTooltip } from "@/components/ui/MetricTooltip";
+import FrequencyDashboard from "./components/FrequencyDashboard";
+import PathsDashboard from "./components/PathsDashboard";
+import PerformanceDashboard from "./components/PerformanceDashboard";
+import FeasibilityMatrix from "./components/FeasibilityMatrix";
+import ComparativeWorkbenchModal from "./components/ComparativeWorkbenchModal";
+import ActivityDetailsPanel from "./components/ActivityDetailsPanel";
 
 interface ProcessLogDetailsClientProps {
   processLog: ProcessLog & {
@@ -16,45 +25,6 @@ interface ProcessLogDetailsClientProps {
     assessments: Assessment[];
   };
 }
-
-// helper component to display explanation tooltip on hover
-const MetricTooltip = memo(({
-  text,
-  align = "center",
-  position = "top"
-}: {
-  text: string;
-  align?: "center" | "right";
-  position?: "top" | "bottom";
-}) => {
-  return (
-    <span className="group relative cursor-default inline-flex items-center text-slate-400 hover:text-slate-600 transition-colors">
-      <Info className="w-3.5 h-3.5 ml-1" />
-      <span className={`absolute mb-1.5 hidden group-hover:block w-48 bg-slate-900 text-white text-[10px] p-2 rounded shadow-lg z-30 font-normal normal-case leading-normal text-left break-words ${
-        position === "bottom"
-          ? "top-full mt-1.5 bottom-auto mb-0"
-          : "bottom-full mb-1.5 top-auto mt-0"
-      } ${
-        align === "right"
-          ? "right-0 translate-x-[15%] left-auto"
-          : "left-1/2 -translate-x-1/2"
-      }`}>
-        {text}
-        {/* tiny arrow tooltip indicator */}
-        <span className={`absolute border-4 border-transparent ${
-          position === "bottom"
-            ? "bottom-full border-b-slate-900 border-t-transparent top-auto"
-            : "top-full border-t-slate-900 border-b-transparent bottom-auto"
-        } ${
-          align === "right"
-            ? "right-[36px] left-auto"
-            : "left-1/2 -translate-x-1/2"
-        }`} />
-      </span>
-    </span>
-  );
-});
-MetricTooltip.displayName = "MetricTooltip";
 
 export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetailsClientProps) {
   const router = useRouter();
@@ -78,8 +48,6 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [nodeLimit, setNodeLimit] = useState<number>(30);
   const [batchScope, setBatchScope] = useState<"all" | "visible">("all");
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
-
-
 
   // fetch transition-graph data from API on mount to calculate path volumes
   useEffect(() => {
@@ -114,28 +82,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     }
     if (!modelId) return "n/a";
     // approximate fallback based on average prompt length (650 tokens) and completion length (250 tokens)
-    const id = modelId.startsWith("~") ? modelId.slice(1) : modelId;
-    let inputRate = 0;
-    let outputRate = 0;
-
-    if (id.includes("gemini-pro") || id.includes("gemini-flash")) {
-      inputRate = 0.075;
-      outputRate = 0.30;
-    } else if (id.includes("claude-sonnet")) {
-      inputRate = 3.00;
-      outputRate = 15.00;
-    } else if (id.includes("gpt-latest")) {
-      inputRate = 5.00;
-      outputRate = 15.00;
-    } else if (id.includes("gpt-mini")) {
-      inputRate = 0.15;
-      outputRate = 0.60;
-    } else if (id.includes("haiku")) {
-      inputRate = 0.25;
-      outputRate = 1.25;
-    }
-
-    const estimatedUsd = (650 * inputRate + 250 * outputRate) / 1_000_000;
+    const estimatedUsd = calculateLlmCost(modelId, 650, 250);
     const estimatedCents = estimatedUsd * 100;
     return `~${estimatedCents.toFixed(4)}¢`;
   };
@@ -147,73 +94,67 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     // 1. standardization: case coverage (26.4%)
     const scoreCoverage = act.caseCoverage;
 
-    // 2. complexity: path entropy (24.1%)
-    const complexityEntropy = (act.predecessorEntropy + act.successorEntropy) / 2;
-    const maxExpectedEntropy = Math.log2(Math.max(2, uniqueActivitiesCount));
-    const scoreComplexity = Math.max(0, 1 - (maxExpectedEntropy > 0 ? complexityEntropy / maxExpectedEntropy : 0));
+    // 2. standardization: execution duration coefficient of variation (32.2%)
+    const cv = act.averageDuration > 0 ? Math.sqrt(act.durationVariance) / act.averageDuration : 0;
+    const scoreDurationVariance = cv > 0 ? Math.max(0, 1 - cv) : 1;
 
-    // 3. time-consuming: execution duration (19.5%)
-    const avgSec = act.averageDuration / 1000;
-    const logDuration = avgSec > 0 ? Math.log10(avgSec + 1) : 0;
-    const scoreDuration = Math.min(1, logDuration / 5);
+    // 3. frequency: frequency ranking weight (18.6%)
+    const sortedActivities = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
+    const rankIndex = sortedActivities.findIndex((a) => a.id === act.id);
+    const scoreFrequencyRank = uniqueActivitiesCount > 1 ? 1 - rankIndex / (uniqueActivitiesCount - 1) : 1;
 
-    // 4. repetitiveness: total execution frequency (18.4%)
-    const logFreq = Math.log10(act.frequency + 1);
-    const scoreFrequency = Math.min(1, logFreq / 4);
+    // 4. resource allocation: resource entropy (13.6%)
+    const scoreResourceEntropy = act.resourceEntropy > 0 ? Math.max(0, 1 - act.resourceEntropy / 3) : 1;
 
-    // 5. predictability: duration variance (10.3%)
-    const stdDev = Math.sqrt(act.durationVariance);
-    const cv = act.averageDuration > 0 ? stdDev / act.averageDuration : 0;
-    const scorePredictability = Math.exp(-cv);
+    // 5. flow predictability: predecessor entropy (4.6%)
+    const scorePredecessorEntropy = act.predecessorEntropy > 0 ? Math.max(0, 1 - act.predecessorEntropy / 3) : 1;
 
-    // 6. resource fragmentation: resource entropy (1.3%)
-    const maxExpectedResourceEntropy = Math.log2(Math.max(2, act.resourceCount));
-    const scoreResource = maxExpectedResourceEntropy > 0
-      ? Math.max(0, 1 - act.resourceEntropy / maxExpectedResourceEntropy)
-      : 1;
+    // 6. flow predictability: successor entropy (4.6%)
+    const scoreSuccessorEntropy = act.successorEntropy > 0 ? Math.max(0, 1 - act.successorEntropy / 3) : 1;
 
+    // consolidate parameters
     return [
       {
-        name: "Standardization",
-        desc: "measures how consistently this step appears across cases. high coverage minimizes custom variations.",
-        weight: 26.4,
+        name: "Case Coverage",
         score: scoreCoverage * 100,
-        value: `${(act.caseCoverage * 100).toFixed(0)}% coverage`,
+        weight: 26.4,
+        desc: "percentage of cases that execute this activity.",
+        value: `${(act.caseCoverage * 100).toFixed(1)}% coverage`,
       },
       {
-        name: "Complexity",
-        desc: "evaluates sequential branching. lower path entropy means a straightforward, standard process sequence.",
-        weight: 24.1,
-        score: scoreComplexity * 100,
-        value: `${complexityEntropy.toFixed(2)} entropy`,
-      },
-      {
-        name: "Time-consuming",
-        desc: "assesses potential time savings. longer steps yield higher automation benefits.",
-        weight: 19.5,
-        score: scoreDuration * 100,
-        value: formatDuration(act.averageDuration),
-      },
-      {
-        name: "Repetitiveness",
-        desc: "counts total occurrences. highly frequent steps maximize RPA return on investment.",
-        weight: 18.4,
-        score: scoreFrequency * 100,
-        value: `${act.frequency.toLocaleString()}x executions`,
-      },
-      {
-        name: "Predictability",
-        desc: "analyzes duration variance. low duration coefficient of variation indicates standardized, predictable execution.",
-        weight: 10.3,
-        score: scorePredictability * 100,
+        name: "Duration Predictability",
+        score: scoreDurationVariance * 100,
+        weight: 32.2,
+        desc: "standardization based on duration variance. lower variance indicates predictable patterns.",
         value: `CV: ${cv.toFixed(2)}`,
       },
       {
+        name: "Frequency Rank",
+        score: scoreFrequencyRank * 100,
+        weight: 18.6,
+        desc: "relative frequency weight. frequent items offer higher automation return on investment.",
+        value: `#${rankIndex + 1} of ${uniqueActivitiesCount}`,
+      },
+      {
         name: "Resource Specialization",
-        desc: "examines task allocation. lower resource entropy implies a small, specialized group handles it.",
-        weight: 1.3,
-        score: scoreResource * 100,
-        value: `${act.resourceCount} resources`,
+        score: scoreResourceEntropy * 100,
+        weight: 13.6,
+        desc: "diversity of resource allocation. lower values mean a specialized group performs the task.",
+        value: `entropy: ${act.resourceEntropy.toFixed(2)}`,
+      },
+      {
+        name: "Entry Predictability",
+        score: scorePredecessorEntropy * 100,
+        weight: 4.6,
+        desc: "flow predictability of incoming connections.",
+        value: `entropy: ${act.predecessorEntropy.toFixed(2)}`,
+      },
+      {
+        name: "Exit Predictability",
+        score: scoreSuccessorEntropy * 100,
+        weight: 4.6,
+        desc: "flow predictability of outgoing connections.",
+        value: `entropy: ${act.successorEntropy.toFixed(2)}`,
       },
     ];
   };
@@ -253,14 +194,14 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
       )
     : null;
 
-  // trigger on-demand single-shot LLM evaluation via POST API
+  // run single-activity LLM feasibility evaluation
   const handleRunLlmEvaluation = async () => {
     if (!activity) return;
     setEvaluating(true);
     setEvalError(null);
 
     try {
-      const res = await fetch("/api/assessments", {
+      const response = await fetch("/api/assessments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -270,222 +211,249 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         }),
       });
 
-      const body = await res.json();
-      if (!res.ok) {
-        throw new Error(body.error || "failed to evaluate activity");
+      const res = await response.json();
+      if (!response.ok) {
+        throw new Error(res.error || "failed to evaluate activity");
       }
 
-      // force reload graph if active color source matches the evaluated model
-      if (colorSource === "LLM" && graphModel === selectedModel) {
+      // refresh Next.js server page content to fetch updated assessments
+      router.refresh();
+
+      // check if the model just evaluated is the same as the selected overlay model
+      if (selectedModel === graphModel) {
         setGraphReloadTrigger((prev) => prev + 1);
       }
-
-      // refresh data from server component and rehydrate page props
-      router.refresh();
     } catch (err: any) {
-      console.error("LLM evaluation error:", err);
-      setEvalError(err.message || "an error occurred during evaluation");
+      console.error(err);
+      setEvalError(err.message || "failed to run evaluation");
     } finally {
       setEvaluating(false);
     }
   };
 
-  // trigger single-shot LLM evaluation for activities with concurrency limit of 3
+  // run batch LLM evaluations across activities
   const handleRunBatchLlmEvaluation = async () => {
     setBatchEvaluating(true);
     setBatchProgress(0);
 
-    // determine target activities based on batchScope configuration
-    let activities = processLog.activities;
+    // filter target activities based on batchScope selection
+    let targets = [...processLog.activities];
     if (batchScope === "visible") {
       const sorted = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
-      activities = sorted.slice(0, nodeLimit);
+      targets = sorted.slice(0, Math.min(nodeLimit, sorted.length));
     }
-    const limit = 3;
-    let index = 0;
 
-    // concurrently process work queue
+    const total = targets.length;
+    if (total === 0) {
+      setBatchEvaluating(false);
+      return;
+    }
+
+    // configure a concurrency limit pool of 3 workers
+    const concurrencyLimit = 3;
+    let activeIndex = 0;
+
     const worker = async () => {
-      while (index < activities.length) {
-        const i = index++;
-        if (i >= activities.length) break;
-        const act = activities[i];
+      while (activeIndex < total) {
+        const currentJobIndex = activeIndex++;
+        const targetAct = targets[currentJobIndex];
 
         try {
-          // post evaluation request
-          const res = await fetch("/api/assessments", {
+          const response = await fetch("/api/assessments", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              activityId: act.id,
+              activityId: targetAct.id,
               type: "LLM_SINGLE_SHOT",
               model: batchModel,
             }),
           });
 
-          if (!res.ok) {
-            const body = await res.json();
-            console.error(`failed to evaluate activity ${act.name}:`, body.error);
+          if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            console.error(`failed to evaluate activity ${targetAct.name}:`, errBody.error || "unknown error");
           }
         } catch (err) {
-          console.error(`error during evaluation of ${act.name}:`, err);
+          console.error(`network error evaluating activity ${targetAct.name}:`, err);
+        } finally {
+          setBatchProgress((prev) => prev + 1);
         }
-
-        setBatchProgress((prev) => prev + 1);
       }
     };
 
-    try {
-      // fire up to 3 parallel workers
-      const workers = Array.from({ length: Math.min(limit, activities.length) }, worker);
-      await Promise.all(workers);
+    // start worker pool
+    const workers = Array.from({ length: Math.min(concurrencyLimit, total) }, () => worker());
+    await Promise.all(workers);
 
-      // automatically set colors to LLM using batchModel and trigger map reload
-      setGraphModel(batchModel);
-      setColorSource("LLM");
+    setBatchEvaluating(false);
+    router.refresh();
+    
+    // invalidate transition graph fetch cache to trigger instant overlay refresh
+    if (batchModel === graphModel) {
       setGraphReloadTrigger((prev) => prev + 1);
-
-      // refresh data from server component and rehydrate page props
-      router.refresh();
-    } catch (err: any) {
-      console.error("batch LLM evaluation error:", err);
-    } finally {
-      setBatchEvaluating(false);
-      setBatchProgress(0);
     }
   };
 
-  // sort and filter activity statistics for the dashboard
-  const sortedActivities = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
-  const totalEvents = processLog.activities.reduce((sum, act) => sum + act.frequency, 0);
+  // memoized metrics for dashboards
+  const {
+    top10Activities,
+    maxFrequencyInTop10,
+    donutData,
+    totalEvents,
+    top10Transitions,
+    maxTransitionCount,
+    pathDonutData,
+    totalPathCases,
+    top10Durations,
+    maxDurationInTop10,
+    top10Entropy,
+    maxEntropyValue,
+  } = useMemo(() => {
+    // 1. frequency dashboard stats
+    const sortedFreq = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
+    const top10 = sortedFreq.slice(0, 10);
+    const maxFreq = top10.length > 0 ? Math.max(...top10.map((a) => a.frequency)) : 1;
 
-  // calculate top 10 activities for the bar chart
-  const top10Activities = sortedActivities.slice(0, 10);
-  const maxFrequencyInTop10 = top10Activities.length > 0 ? top10Activities[0].frequency : 1;
+    const totalEv = processLog.activities.reduce((sum, a) => sum + a.frequency, 0);
+    const top5 = sortedFreq.slice(0, 5);
+    const top5Sum = top5.reduce((sum, a) => sum + a.frequency, 0);
 
-  // calculate top 5 activities + "others" group for the donut chart
-  const top5Activities = sortedActivities.slice(0, 5);
-  const othersFrequency = sortedActivities.slice(5).reduce((sum, act) => sum + act.frequency, 0);
+    const donut = top5.map((a) => ({
+      name: a.name,
+      frequency: a.frequency,
+      percentage: totalEv > 0 ? (a.frequency / totalEv) * 100 : 0,
+    }));
 
-  const donutData = top5Activities.map((act) => ({
-    name: act.name,
-    frequency: act.frequency,
-    percentage: totalEvents > 0 ? (act.frequency / totalEvents) * 100 : 0,
-  }));
+    if (totalEv > top5Sum) {
+      donut.push({
+        name: "Other Activities",
+        frequency: totalEv - top5Sum,
+        percentage: totalEv > 0 ? ((totalEv - top5Sum) / totalEv) * 100 : 0,
+      });
+    }
 
-  if (othersFrequency > 0) {
-    donutData.push({
-      name: "Others",
-      frequency: othersFrequency,
-      percentage: totalEvents > 0 ? (othersFrequency / totalEvents) * 100 : 0,
+    // 2. path dashboard stats
+    const transitions: { id: string; source: string; target: string; count: number }[] = [];
+    processLog.activities.forEach((act) => {
+      Object.entries(act.successors).forEach(([target, count]) => {
+        transitions.push({
+          id: `${act.name}-${target}`,
+          source: act.name,
+          target,
+          count: Number(count),
+        });
+      });
     });
-  }
 
-  // list of harmonious colors for the donut slices
-  const sliceColors = [
-    "#3b82f6", // blue
-    "#8b5cf6", // violet
-    "#10b981", // emerald
-    "#f59e0b", // amber
-    "#ef4444", // rose
-    "#64748b", // slate (for "others")
-  ];
+    const sortedTrans = transitions.sort((a, b) => b.count - a.count);
+    const top10Tr = sortedTrans.slice(0, 10);
+    const maxTr = top10Tr.length > 0 ? Math.max(...top10Tr.map((t) => t.count)) : 1;
 
-  // ─── path transition data calculations ─────────────────────────────────────
-  
-  // calculate top 10 transitions excluding start/end placeholders
-  const activityTransitions = (graphData?.edges || [])
-    .filter((e) => e.source !== "__START__" && e.target !== "__END__")
-    .sort((a, b) => b.count - a.count);
+    // calculate start & end steps
+    const starts: { [key: string]: number } = {};
+    const ends: { [key: string]: number } = {};
 
-  const top10Transitions = activityTransitions.slice(0, 10);
-  const maxTransitionCount = top10Transitions.length > 0 ? top10Transitions[0].count : 1;
+    if (graphData) {
+      graphData.edges.forEach((edge) => {
+        if (edge.source === "__START__") {
+          starts[edge.target] = (starts[edge.target] || 0) + edge.count;
+        }
+        if (edge.target === "__END__") {
+          ends[edge.source] = (ends[edge.source] || 0) + edge.count;
+        }
+      });
+    }
 
-  // calculate start and end transition points for the path donut chart
-  const startEdges = (graphData?.edges || []).filter((e) => e.source === "__START__");
-  const endEdges = (graphData?.edges || []).filter((e) => e.target === "__END__");
-  
-  const selectedPathEdges = activeTransitionType === "start" ? startEdges : endEdges;
-  const totalPathCases = selectedPathEdges.reduce((sum, e) => sum + e.count, 0);
+    const startList = Object.entries(starts).map(([name, freq]) => ({ name, frequency: freq }));
+    const endList = Object.entries(ends).map(([name, freq]) => ({ name, frequency: freq }));
 
-  const sortedPathTransitions = [...selectedPathEdges]
-    .map((e) => ({
-      name: activeTransitionType === "start" ? e.target : e.source,
-      count: e.count,
-    }))
-    .sort((a, b) => b.count - a.count);
+    const targetList = activeTransitionType === "start" ? startList : endList;
+    const sortedTargets = targetList.sort((a, b) => b.frequency - a.frequency);
 
-  const top5Paths = sortedPathTransitions.slice(0, 5);
-  const othersPathsCount = sortedPathTransitions.slice(5).reduce((sum, t) => sum + t.count, 0);
+    const totalPathC = sortedTargets.reduce((sum, a) => sum + a.frequency, 0);
+    const top5Targets = sortedTargets.slice(0, 5);
+    const top5TargetsSum = top5Targets.reduce((sum, a) => sum + a.frequency, 0);
 
-  const pathDonutData = top5Paths.map((t) => ({
-    name: t.name,
-    frequency: t.count,
-    percentage: totalPathCases > 0 ? (t.count / totalPathCases) * 100 : 0,
-  }));
+    const pathDonut = top5Targets.map((t) => ({
+      name: t.name,
+      frequency: t.frequency,
+      percentage: totalPathC > 0 ? (t.frequency / totalPathC) * 100 : 0,
+    }));
 
-  if (othersPathsCount > 0) {
-    pathDonutData.push({
-      name: "Others",
-      frequency: othersPathsCount,
-      percentage: totalPathCases > 0 ? (othersPathsCount / totalPathCases) * 100 : 0,
+    if (totalPathC > top5TargetsSum) {
+      pathDonut.push({
+        name: "Other Steps",
+        frequency: totalPathC - top5TargetsSum,
+        percentage: totalPathC > 0 ? ((totalPathC - top5TargetsSum) / totalPathC) * 100 : 0,
+      });
+    }
+
+    // 3. performance dashboard stats
+    const sortedDur = [...processLog.activities].sort((a, b) => {
+      const aVal = activeDurationType === "average" ? a.averageDuration : a.medianDuration;
+      const bVal = activeDurationType === "average" ? b.averageDuration : b.medianDuration;
+      return bVal - aVal;
     });
-  }
 
-  // ─── performance & standardization calculations ───────────────────────────
-  
-  // calculate top 10 activities by selected duration type
-  const durationSorted = [...processLog.activities].sort((a, b) => {
-    const valA = activeDurationType === "average" ? a.averageDuration : a.medianDuration;
-    const valB = activeDurationType === "average" ? b.averageDuration : b.medianDuration;
-    return valB - valA;
-  });
-  const top10Durations = durationSorted.slice(0, 10);
-  const maxDurationInTop10 = top10Durations.length > 0 
-    ? (activeDurationType === "average" ? top10Durations[0].averageDuration : top10Durations[0].medianDuration)
-    : 1;
+    const top10D = sortedDur.slice(0, 10);
+    const maxDur = top10D.length > 0
+      ? Math.max(...top10D.map((a) => (activeDurationType === "average" ? a.averageDuration : a.medianDuration)))
+      : 1;
 
-  // calculate top 10 activities by combined branching complexity
-  const entropySorted = [...processLog.activities].sort(
-    (a, b) => (b.predecessorEntropy + b.successorEntropy) - (a.predecessorEntropy + a.successorEntropy)
-  );
-  const top10Entropy = entropySorted.slice(0, 10);
-  const maxEntropyValue = Math.max(
-    ...top10Entropy.map((a) => Math.max(a.predecessorEntropy, a.successorEntropy)),
-    1
-  );
+    // branching entropy stats
+    const sortedEnt = [...processLog.activities].sort(
+      (a, b) => b.predecessorEntropy + b.successorEntropy - (a.predecessorEntropy + a.successorEntropy)
+    );
+
+    const top10E = sortedEnt.slice(0, 10);
+    const maxEnt = top10E.length > 0
+      ? Math.max(...top10E.flatMap((a) => [a.predecessorEntropy, a.successorEntropy]))
+      : 1;
+
+    return {
+      top10Activities: top10,
+      maxFrequencyInTop10: maxFreq,
+      donutData: donut,
+      totalEvents: totalEv,
+      top10Transitions: top10Tr,
+      maxTransitionCount: maxTr,
+      pathDonutData: pathDonut,
+      totalPathCases: totalPathC,
+      top10Durations: top10D,
+      maxDurationInTop10: maxDur,
+      top10Entropy: top10E,
+      maxEntropyValue: maxEnt,
+    };
+  }, [processLog.activities, graphData, activeTransitionType, activeDurationType]);
+
+  // callback when comparing row in feasibility matrix
+  const handleSelectAndCompare = (activityName: string, activeAssessmentsCount: number) => {
+    setSelectedActivity(activityName);
+    if (activeAssessmentsCount >= 2) {
+      setIsCompareModalOpen(true);
+    }
+  };
 
   return (
-    <div className="space-y-6 p-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b pb-4">
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b pb-4 gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{processLog.name}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            File: <span className="font-mono">{processLog.fileName}</span> • Size: {(
-              processLog.fileSize /
-              1024 /
-              1024
-            ).toFixed(2)}{" "}
-            MB
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
+            📊 Process Log: <span className="text-blue-600 font-extrabold">{processLog.name}</span>
+          </h1>
+          <p className="text-sm text-slate-500 font-medium">
+            Analyze execution behavior, path predictability, and run generative AI automation potential evaluations.
           </p>
-          <span
-            className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset mt-2 ${
-              processLog.status === "READY"
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-                : processLog.status === "ERROR"
-                ? "bg-rose-50 text-rose-700 ring-rose-600/10"
-                : "bg-amber-50 text-amber-700 ring-amber-600/10"
-            }`}
-          >
-            {processLog.status}
-          </span>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm">
-            {/* scope selector */}
-            <div className="flex items-center gap-3 border-r pr-3 border-slate-200">
-              <label className="flex items-center gap-1 cursor-pointer text-slate-700 text-xs font-semibold">
+
+        {/* Batch Evaluate Control Box */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center bg-slate-50 border p-3 rounded-lg gap-3">
+          <div className="space-y-2.5">
+            {/* scope radios */}
+            <div className="flex items-center gap-4 text-xs font-semibold text-slate-600 pl-1">
+              <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Scope:</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="radio"
                   name="batchScope"
@@ -493,11 +461,11 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   checked={batchScope === "all"}
                   onChange={() => setBatchScope("all")}
                   disabled={batchEvaluating}
-                  className="accent-blue-600"
+                  className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
                 All ({processLog.activities.length})
               </label>
-              <label className="flex items-center gap-1 cursor-pointer text-slate-700 text-xs font-semibold">
+              <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="radio"
                   name="batchScope"
@@ -505,84 +473,82 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   checked={batchScope === "visible"}
                   onChange={() => setBatchScope("visible")}
                   disabled={batchEvaluating}
-                  className="accent-blue-600"
+                  className="w-3.5 h-3.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
                 Visible ({Math.min(nodeLimit, processLog.activities.length)})
               </label>
             </div>
-
-            <select
-              disabled={batchEvaluating}
-              value={batchModel}
-              onChange={(e) => setBatchModel(e.target.value)}
-              className="bg-white border rounded px-2.5 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-            >
-              {SUPPORTED_MODELS.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))}
-            </select>
-            <Button
-              disabled={batchEvaluating}
-              onClick={handleRunBatchLlmEvaluation}
-              variant="outline"
-              size="sm"
-              className="text-xs h-7 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50 font-semibold animate-none"
-            >
-              {batchEvaluating ? (
-                <>
-                  <Loader2 className="w-3 h-3 animate-spin mr-1" />
-                  Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3 h-3 text-blue-500" />
-                  Evaluate {batchScope === "all" ? "All" : "Visible"}
-                </>
-              )}
-            </Button>
+            
+            <div className="flex items-center gap-2">
+              <select
+                disabled={batchEvaluating}
+                value={batchModel}
+                onChange={(e) => setBatchModel(e.target.value)}
+                className="bg-white border border-slate-200 text-slate-700 rounded py-1 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium cursor-pointer"
+              >
+                {SUPPORTED_MODELS.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                disabled={batchEvaluating}
+                onClick={handleRunBatchLlmEvaluation}
+                size="sm"
+                className="bg-slate-800 hover:bg-slate-900 text-xs font-semibold text-white h-7 shadow-sm px-3"
+              >
+                {batchEvaluating ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                    Evaluating ({batchProgress} / {batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})...
+                  </>
+                ) : (
+                  "Evaluate Batch"
+                )}
+              </Button>
+            </div>
           </div>
-          <Link href="/upload">
-            <Button variant="outline">Back to uploads</Button>
-          </Link>
         </div>
       </div>
 
-      {/* React Flow Graph (Full Width) */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-3">
+      {/* Main Process Graph Panel */}
+      <div className="bg-white border rounded-xl shadow-md p-6 relative overflow-hidden flex flex-col min-h-[500px]">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-4 mb-4 gap-3">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              Process Transition Map
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Select a node to inspect activity details
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              🗺️ Process Transition Map
+            </h3>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              interactive node-link diagram mapping common execution pathways. thicker connections represent higher transition counts.
             </p>
           </div>
           
-          {/* coloring source selector */}
-          <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg p-1 shadow-sm">
-            <button
-              onClick={() => setColorSource("RULE_BASED")}
-              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-all duration-150 ${
-                colorSource === "RULE_BASED"
-                  ? "bg-white text-slate-800 shadow-sm border border-slate-200"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Rule-Based Assessment
-            </button>
-            <button
-              onClick={() => setColorSource("LLM")}
-              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-all duration-150 ${
-                colorSource === "LLM"
-                  ? "bg-white text-slate-800 shadow-sm border border-slate-200"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              LLM Assessment
-            </button>
+          {/* overlay togglers */}
+          <div className="flex flex-wrap items-center bg-slate-100 p-0.75 rounded-lg border border-slate-200 gap-1 sm:gap-2">
+            <div className="flex p-0.5 rounded bg-white/80 border border-slate-200/50 shadow-xs">
+              <button
+                onClick={() => setColorSource("RULE_BASED")}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                  colorSource === "RULE_BASED"
+                    ? "bg-slate-800 text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Rule-Based Overlay
+              </button>
+              <button
+                onClick={() => setColorSource("LLM")}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                  colorSource === "LLM"
+                    ? "bg-slate-800 text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                LLM Overlay
+              </button>
+            </div>
+            
             {colorSource === "LLM" && (
               <select
                 value={graphModel}
@@ -609,7 +575,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         />
       </div>
 
-      {/* Process Log Analytics */}
+      {/* Process Log Analytics Card */}
       <Card className="border shadow-md">
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 border-b bg-slate-50/50">
           <div>
@@ -630,1285 +596,80 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         </CardHeader>
         <CardContent className="p-6">
           {selectedDashboard === "frequency" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              
-              {/* left column: horizontal bar chart */}
-              <div className="space-y-4">
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                  Top 10 Most Frequent Activities
-                  <MetricTooltip text="frequency of execution for the top 10 most active process steps." />
-                </h4>
-                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
-                  {top10Activities.map((act) => {
-                    const percent = (act.frequency / maxFrequencyInTop10) * 100;
-                    return (
-                      <div key={act.name} className="flex items-center text-xs gap-3">
-                        <span
-                          className="w-28 text-slate-600 font-medium truncate"
-                          title={act.name}
-                        >
-                          {act.name}
-                        </span>
-                        <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
-                          <div
-                            style={{ width: `${percent}%` }}
-                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 group-hover:brightness-110"
-                          />
-                        </div>
-                        <span className="w-12 text-right font-semibold text-slate-700">
-                          {act.frequency.toLocaleString()}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* right column: donut chart */}
-              <div className="space-y-4">
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                  Activity Volume Share
-                  <MetricTooltip text="relative percentage share of total event volume by activity." />
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center">
-                  
-                  {/* circular donut */}
-                  <div className="relative flex justify-center items-center h-44">
-                    <svg width="160" height="160" viewBox="0 0 160 160">
-                      {/* base grid circle */}
-                      <circle
-                        cx="80"
-                        cy="80"
-                        r="50"
-                        fill="transparent"
-                        stroke="#e2e8f0"
-                        strokeWidth="12"
-                      />
-                      {(() => {
-                        let accumulatedPercent = 0;
-                        // compute rotation angles in original order first to preserve positions
-                        const preparedSlices = donutData.map((slice, index) => {
-                          const circumference = 314.16;
-                          const strokeDasharray = `${(slice.percentage / 100) * circumference} ${circumference}`;
-                          // calculate rotation angle so each segment starts exactly where the previous ended
-                          const rotationAngle = -90 + (accumulatedPercent / 100) * 360;
-                          accumulatedPercent += slice.percentage;
-                          return {
-                            ...slice,
-                            index,
-                            strokeDasharray,
-                            rotationAngle,
-                          };
-                        });
-
-                        // sort so that the hovered slice is rendered last (on top of others)
-                        const sortedForRender = [...preparedSlices].sort((a, b) => {
-                          if (a.index === hoveredSlice) return 1;
-                          if (b.index === hoveredSlice) return -1;
-                          return 0;
-                        });
-
-                        return sortedForRender.map((slice) => {
-                          const color = sliceColors[slice.index % sliceColors.length];
-                          const isHovered = hoveredSlice === slice.index;
-
-                          return (
-                            <circle
-                              key={slice.name}
-                              cx="80"
-                              cy="80"
-                              r="50"
-                              fill="transparent"
-                              stroke={color}
-                              strokeWidth={isHovered ? "16" : "12"}
-                              style={{
-                                strokeDasharray: slice.strokeDasharray,
-                                strokeDashoffset: 0,
-                              }}
-                              transform={`rotate(${slice.rotationAngle} 80 80)`}
-                              className="transition-[stroke-width] duration-200 cursor-pointer"
-                              onMouseEnter={() => setHoveredSlice(slice.index)}
-                              onMouseLeave={() => setHoveredSlice(null)}
-                            />
-                          );
-                        });
-                      })()}
-                    </svg>
-                    
-                    {/* center info overlay */}
-                    <div className="absolute flex flex-col justify-center items-center pointer-events-none w-24 text-center">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider truncate max-w-full">
-                        {hoveredSlice !== null ? donutData[hoveredSlice].name : "Total Events"}
-                      </span>
-                      <strong className="text-base font-extrabold text-slate-800 mt-0.5">
-                        {hoveredSlice !== null 
-                          ? donutData[hoveredSlice].frequency.toLocaleString()
-                          : totalEvents.toLocaleString()}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* legend list */}
-                  <div className="space-y-1.5 justify-center flex flex-col">
-                    {donutData.map((slice, index) => {
-                      const color = sliceColors[index % sliceColors.length];
-                      const isHovered = hoveredSlice === index;
-                      return (
-                        <div
-                          key={slice.name}
-                          className={`flex items-center text-xs justify-between p-1 rounded transition-colors duration-150 ${
-                            isHovered ? "bg-white shadow-sm border border-slate-100" : "border border-transparent"
-                          }`}
-                          onMouseEnter={() => setHoveredSlice(index)}
-                          onMouseLeave={() => setHoveredSlice(null)}
-                        >
-                          <div className="flex items-center gap-2 truncate pr-1">
-                            <span
-                              className="w-3 h-3 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: color }}
-                            />
-                            <span className="text-slate-600 font-medium truncate" title={slice.name}>
-                              {slice.name}
-                            </span>
-                          </div>
-                          <span className="text-slate-700 font-semibold flex-shrink-0">
-                            {slice.percentage.toFixed(1)}%
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                </div>
-              </div>
-
-            </div>
+            <FrequencyDashboard
+              top10Activities={top10Activities}
+              maxFrequencyInTop10={maxFrequencyInTop10}
+              donutData={donutData}
+              totalEvents={totalEvents}
+              hoveredSlice={hoveredSlice}
+              setHoveredSlice={setHoveredSlice}
+            />
           )}
 
           {selectedDashboard === "paths" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              
-              {/* left column: top 10 transitions bar chart */}
-              <div className="space-y-4">
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                  Top 10 Sequence Transitions
-                  <MetricTooltip text="shows the most frequent transitions between consecutive activities." />
-                </h4>
-                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
-                  {top10Transitions.length > 0 ? (
-                    top10Transitions.map((trans) => {
-                      const percent = (trans.count / maxTransitionCount) * 100;
-                      return (
-                        <div key={trans.id} className="flex items-center text-xs gap-3">
-                          <span
-                            className="w-36 text-slate-600 font-medium truncate flex items-center gap-1"
-                            title={`${trans.source} → ${trans.target}`}
-                          >
-                            <span className="truncate max-w-[64px]">{trans.source}</span>
-                            <span className="text-slate-400 text-[10px]">→</span>
-                            <span className="truncate max-w-[64px]">{trans.target}</span>
-                          </span>
-                          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
-                            <div
-                              style={{ width: `${percent}%` }}
-                              className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500 group-hover:brightness-110"
-                            />
-                          </div>
-                          <span className="w-12 text-right font-semibold text-slate-700">
-                            {trans.count.toLocaleString()}
-                          </span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-slate-400">
-                      No transitions found
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* right column: toggleable start and end step donut chart */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                    Start & End Step Distribution
-                    <MetricTooltip text="distribution of activities that initiate or terminate cases." />
-                  </h4>
-                  {/* start/end step toggle buttons */}
-                  <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200">
-                    <button
-                      onClick={() => {
-                        setActiveTransitionType("start");
-                        setHoveredPathSlice(null);
-                      }}
-                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
-                        activeTransitionType === "start"
-                          ? "bg-white text-slate-800 shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      Start Steps
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveTransitionType("end");
-                        setHoveredPathSlice(null);
-                      }}
-                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
-                        activeTransitionType === "end"
-                          ? "bg-white text-slate-800 shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      End Steps
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center">
-                  
-                  {/* circular path donut */}
-                  <div className="relative flex justify-center items-center h-44">
-                    <svg width="160" height="160" viewBox="0 0 160 160">
-                      {/* base circle backdrop */}
-                      <circle
-                        cx="80"
-                        cy="80"
-                        r="50"
-                        fill="transparent"
-                        stroke="#e2e8f0"
-                        strokeWidth="12"
-                      />
-                      {(() => {
-                        let accumulatedPercent = 0;
-                        // pre-calculate segment rotation angles in sequence first
-                        const preparedSlices = pathDonutData.map((slice, index) => {
-                          const circumference = 314.16;
-                          const strokeDasharray = `${(slice.percentage / 100) * circumference} ${circumference}`;
-                          const rotationAngle = -90 + (accumulatedPercent / 100) * 360;
-                          accumulatedPercent += slice.percentage;
-                          return {
-                            ...slice,
-                            index,
-                            strokeDasharray,
-                            rotationAngle,
-                          };
-                        });
-
-                        // sort rendering circles to draw hovered slice last (on top)
-                        const sortedForRender = [...preparedSlices].sort((a, b) => {
-                          if (a.index === hoveredPathSlice) return 1;
-                          if (b.index === hoveredPathSlice) return -1;
-                          return 0;
-                        });
-
-                        return sortedForRender.map((slice) => {
-                          const color = sliceColors[slice.index % sliceColors.length];
-                          const isHovered = hoveredPathSlice === slice.index;
-
-                          return (
-                            <circle
-                              key={slice.name}
-                              cx="80"
-                              cy="80"
-                              r="50"
-                              fill="transparent"
-                              stroke={color}
-                              strokeWidth={isHovered ? "16" : "12"}
-                              style={{
-                                strokeDasharray: slice.strokeDasharray,
-                                strokeDashoffset: 0,
-                              }}
-                              transform={`rotate(${slice.rotationAngle} 80 80)`}
-                              className="transition-[stroke-width] duration-200 cursor-pointer"
-                              onMouseEnter={() => setHoveredPathSlice(slice.index)}
-                              onMouseLeave={() => setHoveredPathSlice(null)}
-                            />
-                          );
-                        });
-                      })()}
-                    </svg>
-                    
-                    {/* display hovered step name and absolute frequency inside circle */}
-                    <div className="absolute flex flex-col justify-center items-center pointer-events-none w-24 text-center">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider truncate max-w-full">
-                        {hoveredPathSlice !== null ? pathDonutData[hoveredPathSlice].name : "Total Cases"}
-                      </span>
-                      <strong className="text-base font-extrabold text-slate-800 mt-0.5">
-                        {hoveredPathSlice !== null 
-                          ? pathDonutData[hoveredPathSlice].frequency.toLocaleString()
-                          : totalPathCases.toLocaleString()}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* path legend list */}
-                  <div className="space-y-1.5 justify-center flex flex-col">
-                    {pathDonutData.length > 0 ? (
-                      pathDonutData.map((slice, index) => {
-                        const color = sliceColors[index % sliceColors.length];
-                        const isHovered = hoveredPathSlice === index;
-                        return (
-                          <div
-                            key={slice.name}
-                            className={`flex items-center text-xs justify-between p-1 rounded transition-colors duration-150 ${
-                              isHovered ? "bg-white shadow-sm border border-slate-100" : "border border-transparent"
-                            }`}
-                            onMouseEnter={() => setHoveredPathSlice(index)}
-                            onMouseLeave={() => setHoveredPathSlice(null)}
-                          >
-                            <div className="flex items-center gap-2 truncate pr-1">
-                              <span
-                                className="w-3 h-3 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: color }}
-                              />
-                              <span className="text-slate-600 font-medium truncate" title={slice.name}>
-                                {slice.name}
-                              </span>
-                            </div>
-                            <span className="text-slate-700 font-semibold flex-shrink-0">
-                              {slice.percentage.toFixed(1)}%
-                            </span>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-center text-slate-400 text-xs py-4">
-                        No steps recorded
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-              </div>
-
-            </div>
+            <PathsDashboard
+              top10Transitions={top10Transitions}
+              maxTransitionCount={maxTransitionCount}
+              pathDonutData={pathDonutData}
+              totalPathCases={totalPathCases}
+              hoveredPathSlice={hoveredPathSlice}
+              setHoveredPathSlice={setHoveredPathSlice}
+              activeTransitionType={activeTransitionType}
+              setActiveTransitionType={setActiveTransitionType}
+            />
           )}
 
           {selectedDashboard === "performance" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              
-              {/* left column: execution duration per activity (toggleable) */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                    {activeDurationType === "average" ? "Average Duration" : "Median Duration"}
-                    <MetricTooltip text="shows the execution duration for the top 10 longest-running activities." />
-                  </h4>
-                  {/* average/median toggle buttons */}
-                  <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200">
-                    <button
-                      onClick={() => setActiveDurationType("average")}
-                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
-                        activeDurationType === "average"
-                          ? "bg-white text-slate-800 shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      Average
-                    </button>
-                    <button
-                      onClick={() => setActiveDurationType("median")}
-                      className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
-                        activeDurationType === "median"
-                          ? "bg-white text-slate-800 shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      Median
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
-                  {top10Durations.length > 0 ? (
-                    top10Durations.map((act) => {
-                      const durationVal = activeDurationType === "average" ? act.averageDuration : act.medianDuration;
-                      const percent = (durationVal / maxDurationInTop10) * 100;
-                      return (
-                        <div key={act.name} className="flex items-center text-xs gap-3">
-                          <span
-                            className="w-28 text-slate-600 font-medium truncate"
-                            title={act.name}
-                          >
-                            {act.name}
-                          </span>
-                          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
-                            <div
-                              style={{ width: `${percent}%` }}
-                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500 group-hover:brightness-110"
-                            />
-                          </div>
-                          <span className="w-16 text-right font-semibold text-slate-700">
-                            {formatDuration(durationVal)}
-                          </span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-slate-400">
-                      No duration data found
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* right column: branching complexity (incoming vs outgoing) */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                    Branching Complexity (Entropy)
-                    <MetricTooltip text="predecessor and successor path entropy. lower values mean higher predictability (ideal for RPA)." />
-                  </h4>
-                  {/* legend for entropy types */}
-                  <div className="flex gap-3 text-[10px] font-bold">
-                    <span className="flex items-center gap-1 text-blue-600">
-                      <span className="w-2.5 h-2.5 bg-blue-500 rounded-sm" />
-                      In
-                    </span>
-                    <span className="flex items-center gap-1 text-purple-600">
-                      <span className="w-2.5 h-2.5 bg-purple-500 rounded-sm" />
-                      Out
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
-                  {top10Entropy.length > 0 ? (
-                    top10Entropy.map((act) => {
-                      const predPercent = (act.predecessorEntropy / maxEntropyValue) * 100;
-                      const succPercent = (act.successorEntropy / maxEntropyValue) * 100;
-                      return (
-                        <div key={act.name} className="flex items-start text-xs gap-3">
-                          <span
-                            className="w-28 text-slate-600 font-medium truncate pt-0.5"
-                            title={act.name}
-                          >
-                            {act.name}
-                          </span>
-                          
-                          {/* stacked predecessor and successor bars */}
-                          <div className="flex-1 space-y-1.5 pt-0.5">
-                            {/* predecessor bar */}
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden relative group">
-                                <div
-                                  style={{ width: `${predPercent}%` }}
-                                  className="h-full bg-blue-500 rounded-full transition-all duration-500 group-hover:brightness-115"
-                                />
-                              </div>
-                              <span className="w-8 text-right font-mono text-[10px] text-slate-500 font-medium">
-                                {act.predecessorEntropy.toFixed(2)}
-                              </span>
-                            </div>
-                            
-                            {/* successor bar */}
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden relative group">
-                                <div
-                                  style={{ width: `${succPercent}%` }}
-                                  className="h-full bg-purple-500 rounded-full transition-all duration-500 group-hover:brightness-115"
-                                />
-                              </div>
-                              <span className="w-8 text-right font-mono text-[10px] text-slate-500 font-medium">
-                                {act.successorEntropy.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-slate-400">
-                      No entropy data found
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
+            <PerformanceDashboard
+              activeDurationType={activeDurationType}
+              setActiveDurationType={setActiveDurationType}
+              top10Durations={top10Durations}
+              maxDurationInTop10={maxDurationInTop10}
+              formatDuration={formatDuration}
+              top10Entropy={top10Entropy}
+              maxEntropyValue={maxEntropyValue}
+            />
           )}
 
           {selectedDashboard === "comparison" && (
-            <div className="space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-slate-50 p-4 border border-slate-200 rounded-lg">
-                <div>
-                  <h4 className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1">
-                    Feasibility Scoring Matrix
-                  </h4>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Compare automation scores across rule-based criteria and all evaluated AI models side-by-side.
-                  </p>
-                </div>
-                
-                {/* model summary stats */}
-                {(() => {
-                  const totalLlmCostUsd = processLog.assessments
-                    ? processLog.assessments
-                        .filter((a) => a.type === "LLM_SINGLE_SHOT" && a.costUsd !== null && a.costUsd !== undefined)
-                        .reduce((sum, a) => sum + (a.costUsd || 0), 0)
-                    : 0;
-
-                  return (
-                    <div className="text-[10px] text-slate-500 font-semibold bg-white border rounded px-3 py-2 shadow-xs space-y-1">
-                      <div>Evaluated Steps: <span className="text-slate-800 font-bold">{processLog.activities.length}</span></div>
-                      <div>AI Models Stored: <span className="text-slate-800 font-bold">
-                        {new Set(processLog.assessments.filter(a => a.type === "LLM_SINGLE_SHOT").map(a => a.model)).size}
-                      </span></div>
-                      {totalLlmCostUsd > 0 && (
-                        <div>Total LLM Cost: <span className="text-slate-800 font-bold">{formatCost(totalLlmCostUsd, null)}</span></div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="overflow-x-auto border rounded-lg bg-white shadow-sm">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
-                      <th className="py-3 px-4 font-bold">Activity Name</th>
-                      <th className="py-3 px-4 font-bold text-center">Frequency</th>
-                      <th className="py-3 px-4 font-bold text-center border-l bg-slate-50/20">Rule-Based</th>
-                      
-                      {SUPPORTED_MODELS.map((model) => (
-                        <th key={model.id} className="py-3 px-4 font-bold text-center border-l">
-                          {model.name.replace(" (Latest)", "")}
-                        </th>
-                      ))}
-                      
-                      <th className="py-3 px-4 font-bold text-center border-l bg-slate-50/20">Spread</th>
-                      <th className="py-3 px-4 font-bold text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {processLog.activities.map((act) => {
-                      // get rule-based assessment
-                      const ruleAsm = processLog.assessments.find(
-                        (a) => a.activityId === act.id && a.type === "RULE_BASED"
-                      );
-                      
-                      // get LLM assessments
-                      const modelAssessments: { [modelId: string]: any } = {};
-                      const activeScores: number[] = [];
-                      
-                      SUPPORTED_MODELS.forEach((model) => {
-                        const asm = processLog.assessments.find(
-                          (a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id
-                        );
-                        modelAssessments[model.id] = asm;
-                        if (asm) {
-                          activeScores.push(asm.score);
-                        }
-                      });
-
-                      // calculate min/max spread
-                      const spread = activeScores.length > 1 
-                        ? Math.max(...activeScores) - Math.min(...activeScores)
-                        : null;
-
-                      const getScoreColor = (score: number | null) => {
-                        if (score === null) return "text-slate-400 bg-slate-50 border-slate-200";
-                        if (score >= 70) return "text-emerald-700 bg-emerald-50 border-emerald-200 font-bold";
-                        if (score >= 35) return "text-amber-700 bg-amber-50 border-amber-200 font-bold";
-                        return "text-rose-700 bg-rose-50 border-rose-200 font-bold";
-                      };
-
-                      return (
-                        <tr key={act.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="py-3 px-4 font-semibold text-slate-800 max-w-[200px] truncate" title={act.name}>
-                            {act.name}
-                          </td>
-                          <td className="py-3 px-4 text-center font-semibold text-slate-600">
-                            {act.frequency.toLocaleString()}x
-                          </td>
-                          
-                          {/* rule-based score */}
-                          <td className="py-3 px-4 text-center border-l bg-slate-50/10 font-bold">
-                            {ruleAsm ? (
-                              <span className={`inline-block px-2 py-1.5 rounded-md border text-[11px] min-w-[40px] text-center ${getScoreColor(ruleAsm.score)}`}>
-                                {ruleAsm.score}%
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">—</span>
-                            )}
-                          </td>
-
-                          {/* LLM model scores */}
-                          {SUPPORTED_MODELS.map((model) => {
-                            const asm = modelAssessments[model.id];
-                            const score = asm ? asm.score : null;
-                            return (
-                              <td key={model.id} className="py-3 px-4 text-center border-l">
-                                {score !== null ? (
-                                  <span 
-                                    title={`Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
-                                    className={`inline-block px-2 py-1.5 rounded-md border text-[11px] min-w-[40px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
-                                  >
-                                    {score}%
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400 font-normal">—</span>
-                                )}
-                              </td>
-                            );
-                          })}
-
-                          {/* spread (agreement measure) */}
-                          <td className="py-3 px-4 text-center border-l bg-slate-50/10 font-bold">
-                            {spread !== null ? (
-                              <span className={`inline-block px-2 py-0.75 rounded-md text-[10px] min-w-[32px] text-center ${
-                                spread > 25
-                                  ? "bg-rose-100 text-rose-800 border border-rose-200 font-extrabold"
-                                  : spread > 10
-                                  ? "bg-amber-100 text-amber-800 border border-amber-200 font-bold"
-                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                              }`} title={spread > 25 ? "High disagreement between AI models" : undefined}>
-                                ±{spread}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">—</span>
-                            )}
-                          </td>
-
-                          {/* actions */}
-                          <td className="py-3 px-4 text-center">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedActivity(act.name);
-                                // if they have at least 2 LLM assessments, open the side-by-side comparative inspector
-                                if (activeScores.length >= 2) {
-                                  setIsCompareModalOpen(true);
-                                }
-                              }}
-                              className="text-[10px] h-6 px-2.5 font-semibold gap-1 border-slate-200 text-slate-700 hover:bg-slate-100 shadow-xs"
-                            >
-                              Compare
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <FeasibilityMatrix
+              activities={processLog.activities}
+              assessments={processLog.assessments}
+              onSelectAndCompare={handleSelectAndCompare}
+              formatCost={formatCost}
+            />
           )}
         </CardContent>
       </Card>
 
       {/* Details Panel (At the Bottom) */}
-      <Card className="min-h-[200px] flex flex-col border shadow-md">
-        <CardHeader className="border-b bg-slate-50/50">
-          <CardTitle>Activity Details</CardTitle>
-          <CardDescription>
-            {selectedActivity ? "Profile and metrics" : "No activity selected"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 flex flex-col justify-center p-6 overflow-y-auto">
-          {activity ? (
-            <div className="space-y-6 text-left">
-              {/* title and primary status */}
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b pb-4 gap-2">
-                <div>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600">
-                    Selected Activity
-                  </span>
-                  <h3 className="text-xl font-bold text-slate-800 break-all mt-0.5">{activity.name}</h3>
-                </div>
-                <div className="flex flex-wrap gap-4 text-sm">
-                  <div className="bg-slate-50 border px-3 py-1.5 rounded-md">
-                    <span className="text-xs text-slate-500 flex items-center font-medium">
-                      Frequency
-                      <MetricTooltip text="total number of times this activity was executed across all log events." align="right" position="bottom" />
-                    </span>
-                    <strong className="text-slate-800 text-base">{activity.frequency.toLocaleString()}x</strong>
-                  </div>
-                  <div className="bg-slate-50 border px-3 py-1.5 rounded-md">
-                    <span className="text-xs text-slate-500 flex items-center font-medium">
-                      Case Coverage
-                      <MetricTooltip text="percentage of process cases containing this activity at least once." align="right" position="bottom" />
-                    </span>
-                    <strong className="text-slate-800 text-base">{(activity.caseCoverage * 100).toFixed(1)}%</strong>
-                  </div>
-                  {activityAssessment && (
-                    <div className="bg-slate-50 border px-3 py-1.5 rounded-md flex flex-col justify-between">
-                      <span className="text-xs text-slate-500 flex items-center font-medium">
-                        Rule-Based Automation Potential
-                        <MetricTooltip text="rule-based feasibility score calculated using the Delphi consensus weights of Farinha et al. (2024)." align="right" position="bottom" />
-                      </span>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <strong className="text-slate-800 text-base">{activityAssessment.score}%</strong>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          activityAssessment.label === "HIGH"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : activityAssessment.label === "MEDIUM"
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-rose-100 text-rose-800"
-                        }`}>
-                          {activityAssessment.label}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  <div className="bg-slate-50 border px-3 py-1.5 rounded-md flex flex-col justify-between">
-                    <span className="text-xs text-slate-500 flex items-center font-medium">
-                      LLM Automation Potential
-                      <MetricTooltip text="semantic and cognitive feasibility score evaluated using a generative AI LLM on OpenRouter." align="right" position="bottom" />
-                    </span>
-                    {llmAssessment ? (
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <strong className="text-slate-800 text-base">{llmAssessment.score}%</strong>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          llmAssessment.label === "HIGH"
-                            ? "bg-emerald-100 text-emerald-800"
-                            : llmAssessment.label === "MEDIUM"
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-rose-100 text-rose-800"
-                        }`}>
-                          {llmAssessment.label}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-medium ml-1">
-                          via {llmAssessment.model ? (SUPPORTED_MODELS.find(m => m.id === llmAssessment.model)?.name || llmAssessment.model.split("/").pop()) : "Unknown"}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center mt-1">
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
-                          NOT EVALUATED
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+      <ActivityDetailsPanel
+        selectedActivity={selectedActivity}
+        activity={activity || null}
+        activityAssessment={activityAssessment || null}
+        activityLlmAssessments={activityLlmAssessments}
+        llmAssessment={llmAssessment || null}
+        viewLlmModel={viewLlmModel}
+        setViewLlmModel={setViewLlmModel}
+        selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
+        evaluating={evaluating}
+        evalError={evalError}
+        handleRunLlmEvaluation={handleRunLlmEvaluation}
+        setIsCompareModalOpen={setIsCompareModalOpen}
+        formatDuration={formatDuration}
+        formatCost={formatCost}
+        getSubScores={getSubScores}
+      />
 
-              {/* rule-based reasoning block */}
-              {activityAssessment && (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs leading-relaxed space-y-1">
-                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">
-                    Rule-Based Feasibility Analysis
-                  </div>
-                  <p>{activityAssessment.reasoning}</p>
-                </div>
-              )}
-
-              {/* suitability score breakdown grid */}
-              {activityAssessment && (
-                <div className="space-y-3">
-                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-                    Suitability Score Breakdown
-                    <MetricTooltip text="shows the normalized scores and relative contributions of the six Delphi expert parameters used to calculate the automation potential." />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 border rounded-lg">
-                    {getSubScores(activity).map((param) => {
-                      const contribution = (param.score * (param.weight / 100)).toFixed(1);
-                      return (
-                        <div key={param.name} className="space-y-1.5 text-xs">
-                          <div className="flex justify-between items-center text-[11px]">
-                            <span className="font-semibold text-slate-700 flex items-center gap-1">
-                              {param.name}
-                              <MetricTooltip text={param.desc} />
-                            </span>
-                            <span className="text-slate-500 font-mono text-[10px]">
-                              weight: {param.weight}% | contr: +{contribution}%
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                style={{ width: `${param.score}%` }}
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  param.score >= 70
-                                    ? "bg-emerald-500"
-                                    : param.score >= 40
-                                    ? "bg-amber-500"
-                                    : "bg-rose-500"
-                                }`}
-                              />
-                            </div>
-                            <span className="w-24 text-right font-medium text-slate-600 text-[10px] truncate" title={param.value}>
-                              {param.value}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 3-column metrics grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* column 1: time & variability */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 font-semibold text-slate-700 border-b pb-1 text-sm">
-                    <Clock className="w-4 h-4 text-blue-500" />
-                    <span className="flex items-center">
-                      Duration & Variance
-                      <MetricTooltip text="summarizes execution durations and predictability. lower variance indicates a highly standardized process step." />
-                    </span>
-                  </div>
-                  <div className="space-y-2 text-xs text-slate-600 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Average Duration:
-                        <MetricTooltip text="average time spent executing this activity." />
-                      </span>
-                      <strong className="text-slate-800">{formatDuration(activity.averageDuration)}</strong>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Median Duration:
-                        <MetricTooltip text="median execution time. 50% of executions are faster than this, and 50% are slower." />
-                      </span>
-                      <strong className="text-slate-800">{formatDuration(activity.medianDuration)}</strong>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Min Duration:
-                        <MetricTooltip text="shortest recorded execution time for this activity." />
-                      </span>
-                      <strong className="text-slate-800">{formatDuration(activity.minDuration)}</strong>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Max Duration:
-                        <MetricTooltip text="longest recorded execution time for this activity." />
-                      </span>
-                      <strong className="text-slate-800">{formatDuration(activity.maxDuration)}</strong>
-                    </div>
-                    <div className="flex justify-between items-center border-t pt-1.5 mt-1">
-                      <span className="flex items-center">
-                        Standard Deviation:
-                        <MetricTooltip text="standard deviation (variability) of execution times. lower values indicate a predictable, highly standardized task (ideal for automation)." />
-                      </span>
-                      <strong className="text-slate-800">
-                        ±{formatDuration(Math.sqrt(activity.durationVariance))}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* column 2: resources & diversity */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 font-semibold text-slate-700 border-b pb-1 text-sm">
-                    <Users className="w-4 h-4 text-blue-500" />
-                    <span className="flex items-center">
-                      Resource Allocation
-                      <MetricTooltip text="summarizes resource counts and specialization. lower entropy indicates the task is consistently handled by a specific group." />
-                    </span>
-                  </div>
-                  <div className="space-y-2 text-xs text-slate-600 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Total Resources:
-                        <MetricTooltip text="number of unique users or resources who performed this activity." />
-                      </span>
-                      <strong className="text-slate-800">{activity.resourceCount}</strong>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Resource Entropy:
-                        <MetricTooltip text="diversity of resource allocation. lower values mean a specialized group consistently performs this task." />
-                      </span>
-                      <strong className="text-slate-800">{activity.resourceEntropy.toFixed(3)}</strong>
-                    </div>
-                    <div className="border-t pt-1.5 mt-1">
-                      <span className="block mb-1 text-[10px] uppercase font-bold text-slate-400">Resource List:</span>
-                      <div className="max-h-16 overflow-y-auto font-mono text-[10px] text-slate-500 bg-white p-1.5 rounded border leading-tight">
-                        {activity.resources.length > 0 ? activity.resources.join(", ") : "No resources recorded"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* column 3: context & standardization */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 font-semibold text-slate-700 border-b pb-1 text-sm">
-                    <ArrowRightLeft className="w-4 h-4 text-blue-500" />
-                    <span className="flex items-center">
-                      Process Context Flow
-                      <MetricTooltip text="summarizes incoming and outgoing process connections. lower entropy represents a straight-through flow with minimal branching logic." align="right" />
-                    </span>
-                  </div>
-                  <div className="space-y-2 text-xs text-slate-600 bg-slate-50/50 p-3 rounded-lg border border-slate-100">
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Predecessor Entropy:
-                        <MetricTooltip text="predictability of the preceding step. lower values mean this activity is consistently entered from the same source activity." />
-                      </span>
-                      <strong className="text-slate-800">{activity.predecessorEntropy.toFixed(3)}</strong>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center">
-                        Successor Entropy:
-                        <MetricTooltip text="predictability of the succeeding step. lower values mean this activity consistently leads to the same next activity." />
-                      </span>
-                      <strong className="text-slate-800">{activity.successorEntropy.toFixed(3)}</strong>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 border-t pt-1.5 mt-1">
-                      <div>
-                        <span className="block mb-1 text-[10px] uppercase font-bold text-slate-400">Predecessors:</span>
-                        <div className="max-h-16 overflow-y-auto font-mono text-[9px] text-slate-500 bg-white p-1 rounded border leading-tight">
-                          {activity.predecessors.length > 0 ? activity.predecessors.join(", ") : "None"}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="block mb-1 text-[10px] uppercase font-bold text-slate-400">Successors:</span>
-                        <div className="max-h-16 overflow-y-auto font-mono text-[9px] text-slate-500 bg-white p-1 rounded border leading-tight">
-                          {activity.successors.length > 0 ? activity.successors.join(", ") : "None"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* LLM Semantic Feasibility Analysis */}
-              <div className="border-t pt-6 space-y-4">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <h4 className="font-semibold text-slate-800 text-sm flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-blue-500" />
-                    LLM Feasibility Analysis
-                  </h4>
-                  {llmAssessment && (
-                    <span className="text-[10px] text-slate-500 font-medium font-mono">
-                      model: {llmAssessment.model}
-                    </span>
-                  )}
-                </div>
-
-                {evalError && (
-                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-lg font-medium">
-                    {evalError}
-                  </div>
-                )}
-
-                {llmAssessment ? (
-                  <div className="space-y-4">
-                    {/* model evaluation tabs */}
-                    {/* model evaluation tabs and comparison workbench trigger */}
-                    {activityLlmAssessments.length > 1 && (
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
-                        {/* model selection tabs */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {activityLlmAssessments.map((asm) => {
-                            const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
-                            const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
-                            const isSelected = viewLlmModel === asm.model;
-                            return (
-                              <button
-                                key={asm.id}
-                                onClick={() => setViewLlmModel(asm.model)}
-                                className={`text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 ${
-                                  isSelected
-                                    ? "bg-blue-600 text-white border-blue-600 font-semibold shadow-sm"
-                                    : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"
-                                }`}
-                              >
-                                {displayName} ({asm.score}%)
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsCompareModalOpen(true)}
-                          className="text-[10px] h-6 px-2 font-bold border-blue-100 text-blue-700 bg-blue-50/50 hover:bg-blue-100 flex items-center gap-1 shadow-xs"
-                        >
-                          <ArrowRightLeft className="w-3 h-3 text-blue-500" />
-                          Compare
-                        </Button>
-                      </div>
-                    )}
-                    {/* reasoning block */}
-                    <div className="p-4 bg-blue-50/40 border border-blue-100 rounded-lg text-slate-700 text-xs leading-relaxed space-y-1">
-                      <div className="text-[10px] uppercase font-bold tracking-wider text-blue-600">
-                        AI Assessment Reasoning
-                      </div>
-                      <p>{llmAssessment.reasoning}</p>
-                    </div>
-
-                    {/* risks & missing info columns */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* column 1: risks */}
-                      <div className="space-y-2">
-                        <div className="text-[10px] uppercase font-bold tracking-wider text-rose-600 flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          Identified Automation Risks
-                        </div>
-                        <div className="bg-rose-50/20 border border-rose-100 p-3 rounded-lg text-xs min-h-[100px] flex flex-col justify-start">
-                          {llmAssessment.risks.length > 0 ? (
-                            <ul className="list-disc pl-4 space-y-1.5 text-slate-700">
-                              {llmAssessment.risks.map((risk, index) => (
-                                <li key={index}>{risk}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-slate-400 italic my-auto text-center">No major risks identified</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* column 2: missing info */}
-                      <div className="space-y-2">
-                        <div className="text-[10px] uppercase font-bold tracking-wider text-amber-600 flex items-center gap-1">
-                          <HelpCircle className="w-3.5 h-3.5" />
-                          Missing Information Requirements
-                        </div>
-                        <div className="bg-amber-50/20 border border-amber-100 p-3 rounded-lg text-xs min-h-[100px] flex flex-col justify-start">
-                          {llmAssessment.missingInfo.length > 0 ? (
-                            <ul className="list-disc pl-4 space-y-1.5 text-slate-700">
-                              {llmAssessment.missingInfo.map((info, index) => (
-                                <li key={index}>{info}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-slate-400 italic my-auto text-center">No missing details required</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* API metadata & re-evaluate options */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-50 p-3 rounded-lg border gap-3">
-                      <div className="flex flex-wrap gap-4 text-[10px] text-slate-500 font-mono">
-                        {llmAssessment.latencyMs !== null && (
-                          <div>
-                            latency: <strong className="text-slate-700">{(llmAssessment.latencyMs / 1000).toFixed(2)}s</strong>
-                          </div>
-                        )}
-                        <div>
-                          cost: <strong className="text-slate-700">{formatCost(llmAssessment.costUsd, llmAssessment.model)}</strong>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                        <select
-                          disabled={evaluating}
-                          value={selectedModel}
-                          onChange={(e) => setSelectedModel(e.target.value)}
-                          className="bg-white border rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        >
-                          {SUPPORTED_MODELS.map((model) => (
-                            <option key={model.id} value={model.id}>
-                              {model.name}
-                            </option>
-                          ))}
-                        </select>
-                        <Button
-                          disabled={evaluating}
-                          onClick={handleRunLlmEvaluation}
-                          size="sm"
-                          variant="outline"
-                          className="text-xs h-7 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50 font-medium shrink-0"
-                        >
-                          {evaluating ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              Re-evaluating...
-                            </>
-                          ) : (
-                            "Re-evaluate"
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 bg-blue-50/30 p-4 border border-blue-100 rounded-lg">
-                    <div className="flex-1 space-y-1">
-                      <h5 className="font-semibold text-xs text-blue-900 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                        Run LLM Automation Feasibility Assessment
-                      </h5>
-                      <p className="text-xs text-blue-700/80 leading-normal">
-                        uses generative AI to analyze the activity label semantically, checking cognitive complexity, manual rule density, OCR needs, and potential business exceptions.
-                      </p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-stretch gap-2 shrink-0">
-                      <select
-                        disabled={evaluating}
-                        value={selectedModel}
-                        onChange={(e) => setSelectedModel(e.target.value)}
-                        className="bg-white border rounded px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-                      >
-                        {SUPPORTED_MODELS.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        disabled={evaluating}
-                        onClick={handleRunLlmEvaluation}
-                        size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white h-8"
-                      >
-                        {evaluating ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
-                            Evaluate Activity
-                          </>
-                        ) : (
-                          "Evaluate Activity"
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8 space-y-2">
-              <span className="text-4xl block">🔍</span>
-              <p className="text-sm font-medium text-slate-500">
-                Select an activity node in the process map to view details
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
       {/* Side-by-Side Comparison Modal */}
-      {isCompareModalOpen && activity && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-200"
-          onClick={() => setIsCompareModalOpen(false)}
-        >
-          <div 
-            className="bg-white border rounded-xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* modal header */}
-            <div className="flex items-center justify-between p-5 border-b bg-slate-50/50">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span className="bg-blue-100 text-blue-800 text-[10px] uppercase px-2 py-0.5 rounded font-extrabold">Comparative Workbench</span>
-                  Activity Evaluation: <span className="text-blue-700">"{activity.name}"</span>
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Side-by-side semantic and scoring breakdown across all evaluated LLM models.
-                </p>
-              </div>
-              <button 
-                onClick={() => setIsCompareModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 bg-white border p-1.5 rounded-lg transition-colors hover:shadow-xs"
-              >
-                <span className="text-xs font-bold px-1">Close [X]</span>
-              </button>
-            </div>
-
-            {/* modal body columns */}
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
-              {activityLlmAssessments.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-sm">
-                  No LLM assessments calculated for this activity yet. Run evaluations to compare models.
-                </div>
-              ) : (
-                <div className={`grid grid-cols-1 md:grid-cols-${Math.min(activityLlmAssessments.length, 3)} gap-6`}>
-                  {activityLlmAssessments.map((asm) => {
-                    const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
-                    const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
-                    
-                    const scoreColor = asm.score >= 70 
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                      : asm.score >= 35
-                      ? "border-amber-200 bg-amber-50 text-amber-950"
-                      : "border-rose-200 bg-rose-50 text-rose-950";
-
-                    const badgeColor = asm.score >= 70
-                      ? "bg-emerald-500 text-white"
-                      : asm.score >= 35
-                      ? "bg-amber-500 text-white"
-                      : "bg-rose-500 text-white";
-
-                    return (
-                      <div key={asm.id} className="flex flex-col bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-                        {/* model header */}
-                        <div className={`p-4 border-b flex items-center justify-between ${scoreColor}`}>
-                          <div>
-                            <h4 className="font-bold text-xs tracking-wide uppercase text-slate-800">
-                              {displayName}
-                            </h4>
-                            <p className="text-[9px] text-slate-500 font-semibold mt-0.5">
-                              Latency: {asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: {formatCost(asm.costUsd, asm.model)}
-                            </p>
-                          </div>
-                          <span className={`text-xs font-black px-2.5 py-1 rounded-full shadow-xs ${badgeColor}`}>
-                            {asm.score}% {asm.label}
-                          </span>
-                        </div>
-
-                        {/* model content */}
-                        <div className="p-4 flex-1 space-y-5 overflow-y-auto">
-                          {/* reasoning */}
-                          <div className="space-y-1.5">
-                            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              AI Reasoning
-                            </h5>
-                            <p className="text-slate-700 text-xs leading-relaxed bg-slate-50/50 p-3 rounded-lg border border-slate-100 min-h-[100px]">
-                              {asm.reasoning}
-                            </p>
-                          </div>
-
-                          {/* risks */}
-                          <div className="space-y-2">
-                            <h5 className="text-[10px] font-bold text-rose-500 uppercase tracking-wider flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3" />
-                              Identified Risks ({asm.risks?.length || 0})
-                            </h5>
-                            <ul className="space-y-1.5 pl-4 list-disc text-slate-600 text-xs">
-                              {asm.risks && asm.risks.length > 0 ? (
-                                asm.risks.map((r, i) => <li key={i}>{r}</li>)
-                              ) : (
-                                <li className="list-none text-slate-400 font-medium italic -ml-4">No risks identified.</li>
-                              )}
-                            </ul>
-                          </div>
-
-                          {/* missing info */}
-                          <div className="space-y-2">
-                            <h5 className="text-[10px] font-bold text-blue-500 uppercase tracking-wider flex items-center gap-1">
-                              <HelpCircle className="w-3 h-3" />
-                              Missing Information Requirements ({asm.missingInfo?.length || 0})
-                            </h5>
-                            <ul className="space-y-1.5 pl-4 list-disc text-slate-600 text-xs">
-                              {asm.missingInfo && asm.missingInfo.length > 0 ? (
-                                asm.missingInfo.map((m, i) => <li key={i}>{m}</li>)
-                              ) : (
-                                <li className="list-none text-slate-400 font-medium italic -ml-4">No missing information noted.</li>
-                              )}
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* modal footer */}
-            <div className="p-4 border-t bg-slate-50 flex items-center justify-between text-[10px] text-slate-500 font-medium px-6">
-              <span>Comparing {activityLlmAssessments.length} models for "{activity.name}".</span>
-              <button 
-                onClick={() => setIsCompareModalOpen(false)}
-                className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-xs"
-              >
-                Close Workbench
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ComparativeWorkbenchModal
+        isOpen={isCompareModalOpen}
+        onClose={() => setIsCompareModalOpen(false)}
+        activity={activity || null}
+        activityLlmAssessments={activityLlmAssessments}
+        formatCost={formatCost}
+      />
     </div>
   );
 }
