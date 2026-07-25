@@ -15,6 +15,109 @@ function formatDuration(ms: number): string {
   return `${days.toFixed(1)}d`;
 }
 
+function extractBalancedJsonObject(text: string): string {
+  let depth = 0;
+  let firstBrace = -1;
+  let lastBrace = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === "\\") {
+        escape = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      if (firstBrace === -1) {
+        firstBrace = i;
+      }
+      depth++;
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0 && firstBrace !== -1) {
+        lastBrace = i;
+        return text.substring(firstBrace, lastBrace + 1);
+      }
+    }
+  }
+
+  // if the string ends but we never reached depth 0, return everything from first brace to try and repair it
+  if (firstBrace !== -1) {
+    return text.substring(firstBrace);
+  }
+
+  return text;
+}
+
+function repairTruncatedJson(jsonStr: string): string {
+  let clean = jsonStr.trim();
+  if (!clean.startsWith("{")) return clean;
+
+  let inString = false;
+  let escape = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === "\\") {
+        escape = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      stack.push("}");
+    } else if (char === "[") {
+      stack.push("]");
+    } else if (char === "}") {
+      if (stack[stack.length - 1] === "}") {
+        stack.pop();
+      }
+    } else if (char === "]") {
+      if (stack[stack.length - 1] === "]") {
+        stack.pop();
+      }
+    }
+  }
+
+  let repaired = clean;
+  if (inString) {
+    repaired += "\"";
+  }
+
+  // pop and append missing closing structures in reverse order
+  while (stack.length > 0) {
+    const closingChar = stack.pop();
+    repaired += closingChar;
+  }
+
+  return repaired;
+}
+
 function cleanAndParseJson(content: string): any {
   let cleanText = content.trim();
 
@@ -23,12 +126,11 @@ function cleanAndParseJson(content: string): any {
     cleanText = cleanText.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
   }
 
-  // isolate first { and last } to remove conversational headers/footers
-  const firstBrace = cleanText.indexOf("{");
-  const lastBrace = cleanText.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-  }
+  // 1. Extract first balanced JSON object to handle trailing garbage/extra braces
+  cleanText = extractBalancedJsonObject(cleanText);
+
+  // 2. Auto-close truncated JSON objects/arrays if the response was cut off
+  cleanText = repairTruncatedJson(cleanText);
 
   try {
     return JSON.parse(cleanText);
@@ -148,6 +250,12 @@ You must output a strict JSON object with this format, containing no other text:
       costUsd: llmResult.costUsd,
       rawResponse: parsedResponse as any,
     },
+  });
+
+  // update parent ProcessLog updatedAt timestamp to invalidate transition-graph cache
+  await prisma.processLog.update({
+    where: { id: activity.processLogId },
+    data: { updatedAt: new Date() },
   });
 
   return assessment;

@@ -24,6 +24,11 @@ export async function GET(
     );
   }
 
+  const url = new URL(request.url);
+  const assessmentType = url.searchParams.get("assessmentType") || "RULE_BASED";
+  const model = url.searchParams.get("model");
+  const cacheKey = `${processLogId}-${assessmentType}-${model || "none"}`;
+
   try {
     // only select id and updatedAt for ultra-fast cache validation
     const processLog = await prisma.processLog.findUnique({
@@ -41,16 +46,19 @@ export async function GET(
     let graphData: any;
 
     // check cache hit
-    const cached = transitionGraphCache.get(processLogId);
+    const cached = transitionGraphCache.get(cacheKey);
     if (cached && cached.updatedAt === processLog.updatedAt.getTime()) {
       graphData = cached.graphData;
     } else {
-      // 1. Fetch activities and their rule-based assessments for this log
+      // 1. Fetch activities and their matching assessments for this log
       const activities = await prisma.activity.findMany({
         where: { processLogId },
         include: {
           assessments: {
-            where: { type: "RULE_BASED" },
+            where: {
+              type: assessmentType as any,
+              ...(model ? { model } : {}),
+            },
           },
         },
       });
@@ -116,7 +124,7 @@ export async function GET(
           averageDuration: 0,
         },
         ...activities.map((act) => {
-          const ruleAssessment = act.assessments?.[0];
+          const assessment = act.assessments?.[0];
           return {
             id: act.name,
             name: act.name,
@@ -125,8 +133,8 @@ export async function GET(
             averageDuration: act.averageDuration,
             caseCoverage: act.caseCoverage,
             resourceCount: act.resourceCount,
-            automationScore: ruleAssessment?.score ?? null,
-            automationLabel: ruleAssessment?.label ?? null,
+            automationScore: assessment?.score ?? null,
+            automationLabel: assessment?.label ?? null,
           };
         }),
         {
@@ -185,7 +193,7 @@ export async function GET(
       };
 
       // cache the calculated full graph data
-      transitionGraphCache.set(processLogId, {
+      transitionGraphCache.set(cacheKey, {
         updatedAt: processLog.updatedAt.getTime(),
         graphData,
       });

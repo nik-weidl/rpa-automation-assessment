@@ -69,6 +69,16 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [evaluating, setEvaluating] = useState<boolean>(false);
   const [evalError, setEvalError] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  const [batchEvaluating, setBatchEvaluating] = useState<boolean>(false);
+  const [batchProgress, setBatchProgress] = useState<number>(0);
+  const [batchModel, setBatchModel] = useState<string>("~google/gemini-pro-latest");
+  const [colorSource, setColorSource] = useState<"RULE_BASED" | "LLM">("RULE_BASED");
+  const [graphModel, setGraphModel] = useState<string>("~google/gemini-pro-latest");
+  const [nodeLimit, setNodeLimit] = useState<number>(30);
+  const [batchScope, setBatchScope] = useState<"all" | "visible">("all");
+  const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
+
+
 
   // fetch transition-graph data from API on mount to calculate path volumes
   useEffect(() => {
@@ -230,6 +240,11 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         throw new Error(body.error || "failed to evaluate activity");
       }
 
+      // force reload graph if active color source matches the evaluated model
+      if (colorSource === "LLM" && graphModel === selectedModel) {
+        setGraphReloadTrigger((prev) => prev + 1);
+      }
+
       // refresh data from server component and rehydrate page props
       router.refresh();
     } catch (err: any) {
@@ -237,6 +252,71 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
       setEvalError(err.message || "an error occurred during evaluation");
     } finally {
       setEvaluating(false);
+    }
+  };
+
+  // trigger single-shot LLM evaluation for activities with concurrency limit of 3
+  const handleRunBatchLlmEvaluation = async () => {
+    setBatchEvaluating(true);
+    setBatchProgress(0);
+
+    // determine target activities based on batchScope configuration
+    let activities = processLog.activities;
+    if (batchScope === "visible") {
+      const sorted = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
+      activities = sorted.slice(0, nodeLimit);
+    }
+    const limit = 3;
+    let index = 0;
+
+    // concurrently process work queue
+    const worker = async () => {
+      while (index < activities.length) {
+        const i = index++;
+        if (i >= activities.length) break;
+        const act = activities[i];
+
+        try {
+          // post evaluation request
+          const res = await fetch("/api/assessments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              activityId: act.id,
+              type: "LLM_SINGLE_SHOT",
+              model: batchModel,
+            }),
+          });
+
+          if (!res.ok) {
+            const body = await res.json();
+            console.error(`failed to evaluate activity ${act.name}:`, body.error);
+          }
+        } catch (err) {
+          console.error(`error during evaluation of ${act.name}:`, err);
+        }
+
+        setBatchProgress((prev) => prev + 1);
+      }
+    };
+
+    try {
+      // fire up to 3 parallel workers
+      const workers = Array.from({ length: Math.min(limit, activities.length) }, worker);
+      await Promise.all(workers);
+
+      // automatically set colors to LLM using batchModel and trigger map reload
+      setGraphModel(batchModel);
+      setColorSource("LLM");
+      setGraphReloadTrigger((prev) => prev + 1);
+
+      // refresh data from server component and rehydrate page props
+      router.refresh();
+    } catch (err: any) {
+      console.error("batch LLM evaluation error:", err);
+    } finally {
+      setBatchEvaluating(false);
+      setBatchProgress(0);
     }
   };
 
@@ -366,22 +446,132 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
             {processLog.status}
           </span>
         </div>
-        <Link href="/upload">
-          <Button variant="outline">Back to uploads</Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm">
+            {/* scope selector */}
+            <div className="flex items-center gap-3 border-r pr-3 border-slate-200">
+              <label className="flex items-center gap-1 cursor-pointer text-slate-700 text-xs font-semibold">
+                <input
+                  type="radio"
+                  name="batchScope"
+                  value="all"
+                  checked={batchScope === "all"}
+                  onChange={() => setBatchScope("all")}
+                  disabled={batchEvaluating}
+                  className="accent-blue-600"
+                />
+                All ({processLog.activities.length})
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer text-slate-700 text-xs font-semibold">
+                <input
+                  type="radio"
+                  name="batchScope"
+                  value="visible"
+                  checked={batchScope === "visible"}
+                  onChange={() => setBatchScope("visible")}
+                  disabled={batchEvaluating}
+                  className="accent-blue-600"
+                />
+                Visible ({Math.min(nodeLimit, processLog.activities.length)})
+              </label>
+            </div>
+
+            <select
+              disabled={batchEvaluating}
+              value={batchModel}
+              onChange={(e) => setBatchModel(e.target.value)}
+              className="bg-white border rounded px-2.5 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+            >
+              {SUPPORTED_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={batchEvaluating}
+              onClick={handleRunBatchLlmEvaluation}
+              variant="outline"
+              size="sm"
+              className="text-xs h-7 gap-1 border-blue-200 text-blue-700 hover:bg-blue-50 font-semibold animate-none"
+            >
+              {batchEvaluating ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                  Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3 h-3 text-blue-500" />
+                  Evaluate {batchScope === "all" ? "All" : "Visible"}
+                </>
+              )}
+            </Button>
+          </div>
+          <Link href="/upload">
+            <Button variant="outline">Back to uploads</Button>
+          </Link>
+        </div>
       </div>
 
       {/* React Flow Graph (Full Width) */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-            Process Transition Map
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Select a node to inspect activity details
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-3">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+              Process Transition Map
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Select a node to inspect activity details
+            </p>
+          </div>
+          
+          {/* coloring source selector */}
+          <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg p-1 shadow-sm">
+            <button
+              onClick={() => setColorSource("RULE_BASED")}
+              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-all duration-150 ${
+                colorSource === "RULE_BASED"
+                  ? "bg-white text-slate-800 shadow-sm border border-slate-200"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Rule-Based Assessment
+            </button>
+            <button
+              onClick={() => setColorSource("LLM")}
+              className={`text-xs px-3 py-1.5 rounded-md font-semibold transition-all duration-150 ${
+                colorSource === "LLM"
+                  ? "bg-white text-slate-800 shadow-sm border border-slate-200"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              LLM Assessment
+            </button>
+            {colorSource === "LLM" && (
+              <select
+                value={graphModel}
+                onChange={(e) => setGraphModel(e.target.value)}
+                className="bg-white border rounded ml-1.5 px-2 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+              >
+                {SUPPORTED_MODELS.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
-        <ProcessGraph processLogId={processLog.id} onNodeSelect={setSelectedActivity} />
+        <ProcessGraph
+          processLogId={processLog.id}
+          onNodeSelect={setSelectedActivity}
+          assessmentType={colorSource === "RULE_BASED" ? "RULE_BASED" : "LLM_SINGLE_SHOT"}
+          model={colorSource === "RULE_BASED" ? null : graphModel}
+          nodeLimit={nodeLimit}
+          onNodeLimitChange={setNodeLimit}
+          reloadTrigger={graphReloadTrigger}
+        />
       </div>
 
       {/* Process Log Analytics */}

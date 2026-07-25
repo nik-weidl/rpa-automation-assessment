@@ -220,17 +220,38 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = "TB") => 
 interface ProcessGraphProps {
   processLogId: string;
   onNodeSelect?: (activityName: string | null) => void;
+  assessmentType?: string;
+  model?: string | null;
+  nodeLimit?: number;
+  onNodeLimitChange?: (limit: number) => void;
+  reloadTrigger?: number;
 }
 
-export default function ProcessGraph({ processLogId, onNodeSelect }: ProcessGraphProps) {
+export default function ProcessGraph({
+  processLogId,
+  onNodeSelect,
+  assessmentType = "RULE_BASED",
+  model = null,
+  nodeLimit: propNodeLimit,
+  onNodeLimitChange,
+  reloadTrigger = 0,
+}: ProcessGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [direction, setDirection] = useState<"TB" | "LR">("LR");
-  const [nodeLimit, setNodeLimit] = useState(30);
+  const [localNodeLimit, setLocalNodeLimit] = useState(30);
   const [sliderVal, setSliderVal] = useState(30);
   const [showLabels, setShowLabels] = useState(true);
+
+  const nodeLimit = propNodeLimit !== undefined ? propNodeLimit : localNodeLimit;
+  const setNodeLimit = (val: number) => {
+    setLocalNodeLimit(val);
+    if (onNodeLimitChange) {
+      onNodeLimitChange(val);
+    }
+  };
 
   // reset slider states if process log changes
   useEffect(() => {
@@ -238,12 +259,19 @@ export default function ProcessGraph({ processLogId, onNodeSelect }: ProcessGrap
     setSliderVal(30);
   }, [processLogId]);
 
+  // sync transient slider value with nodeLimit prop changes
+  useEffect(() => {
+    setSliderVal(nodeLimit);
+  }, [nodeLimit]);
+
   const fetchGraph = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      const modelParam = model ? `&model=${encodeURIComponent(model)}` : "";
+      const triggerParam = reloadTrigger ? `&t=${reloadTrigger}` : "";
       const response = await fetch(
-        `/api/process-logs/${processLogId}/transition-graph?nodeLimit=${nodeLimit}`
+        `/api/process-logs/${processLogId}/transition-graph?nodeLimit=${nodeLimit}&assessmentType=${assessmentType}${modelParam}${triggerParam}`
       );
       const result = await response.json();
 
@@ -308,7 +336,7 @@ export default function ProcessGraph({ processLogId, onNodeSelect }: ProcessGrap
     } finally {
       setLoading(false);
     }
-  }, [processLogId, direction, nodeLimit, showLabels, setNodes, setEdges]);
+  }, [processLogId, direction, nodeLimit, showLabels, assessmentType, model, reloadTrigger, setNodes, setEdges]);
 
   useEffect(() => {
     fetchGraph();

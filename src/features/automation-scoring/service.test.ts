@@ -82,11 +82,22 @@ describe("evaluateActivityWithLLMSingleShot", () => {
       model: "~google/gemini-pro-latest",
     });
 
+    const initialLog = await prisma.processLog.findUnique({
+      where: { id: testLogId },
+    });
+    // add a brief delay to guarantee distinct timestamps in test execution
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
     // trigger service call
     const result = await evaluateActivityWithLLMSingleShot(
       testActivityId,
       "~google/gemini-pro-latest"
     );
+
+    const updatedLog = await prisma.processLog.findUnique({
+      where: { id: testLogId },
+    });
+    expect(updatedLog!.updatedAt.getTime()).toBeGreaterThan(initialLog!.updatedAt.getTime());
 
     // verify database insertion
     expect(result.activityId).toBe(testActivityId);
@@ -131,5 +142,35 @@ describe("evaluateActivityWithLLMSingleShot", () => {
     });
 
     expect(dbAssessments.length).toBe(1);
+  });
+
+  it("should successfully parse and clean JSON responses with trailing extra braces", async () => {
+    vi.mocked(openrouter.callOpenRouter).mockResolvedValue({
+      content: '{\n  "score": 50,\n  "label": "MEDIUM",\n  "reasoning": "Standard step.",\n  "risks": [],\n  "missingInfo": []\n}\n}',
+      tokens: { prompt: 10, completion: 10, total: 20 },
+      costUsd: 0.0001,
+      latencyMs: 100,
+      model: "~google/gemini-pro-latest",
+    });
+
+    const result = await evaluateActivityWithLLMSingleShot(testActivityId, "~google/gemini-pro-latest");
+    expect(result.score).toBe(50);
+    expect(result.label).toBe("MEDIUM");
+  });
+
+  it("should successfully parse and auto-close truncated JSON responses missing closing braces", async () => {
+    vi.mocked(openrouter.callOpenRouter).mockResolvedValue({
+      content: '{\n  "score": 35,\n  "label": "LOW",\n  "reasoning": "Truncated reasoning.",\n  "risks": ["some risk"],\n  "missingInfo": ["some missing question"]',
+      tokens: { prompt: 10, completion: 10, total: 20 },
+      costUsd: 0.0001,
+      latencyMs: 100,
+      model: "~google/gemini-pro-latest",
+    });
+
+    const result = await evaluateActivityWithLLMSingleShot(testActivityId, "~google/gemini-pro-latest");
+    expect(result.score).toBe(35);
+    expect(result.label).toBe("LOW");
+    expect(result.risks).toEqual(["some risk"]);
+    expect(result.missingInfo).toEqual(["some missing question"]);
   });
 });
