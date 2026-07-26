@@ -333,21 +333,20 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     }
 
     // 2. path dashboard stats
-    const transitions: { id: string; source: string; target: string; count: number }[] = [];
-    processLog.activities.forEach((act) => {
-      Object.entries(act.successors).forEach(([target, count]) => {
-        transitions.push({
-          id: `${act.name}-${target}`,
-          source: act.name,
-          target,
-          count: Number(count),
-        });
-      });
-    });
+    const activityTransitions = (graphData?.edges || [])
+      .filter((e) => e.source !== "__START__" && e.target !== "__END__")
+      .sort((a, b) => b.count - a.count);
 
-    const sortedTrans = transitions.sort((a, b) => b.count - a.count);
-    const top10Tr = sortedTrans.slice(0, 10);
-    const maxTr = top10Tr.length > 0 ? Math.max(...top10Tr.map((t) => t.count)) : 1;
+    const top10Tr = activityTransitions
+      .map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        count: e.count,
+      }))
+      .slice(0, 10);
+
+    const maxTr = top10Tr.length > 0 ? top10Tr[0].count : 1;
 
     // calculate start & end steps
     const starts: { [key: string]: number } = {};
