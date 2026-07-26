@@ -96,7 +96,11 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
 
     // 2. standardization: execution duration coefficient of variation (32.2%)
     const cv = act.averageDuration > 0 ? Math.sqrt(act.durationVariance) / act.averageDuration : 0;
-    const scoreDurationVariance = cv > 0 ? Math.max(0, 1 - cv) : 1;
+    // Use hyperbolic decay (1 / (1 + CV)) instead of linear clamping (1 - CV)
+    // to map the coefficient of variation (CV) smoothly to [0, 1].
+    // This prevents the score from collapsing to exactly 0% whenever CV >= 1.0,
+    // ensuring the progress bar renders dynamically for all variation ranges.
+    const scoreDurationVariance = 1 / (1 + cv);
 
     // 3. frequency: frequency ranking weight (18.6%)
     const sortedActivities = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
