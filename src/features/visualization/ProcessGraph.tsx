@@ -1,56 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback, memo } from "react";
-import {
-  ReactFlow,
-  Controls,
-  useNodesState,
-  useEdgesState,
-  Position,
-  NodeProps,
-  Handle,
-  MarkerType,
-  Node,
-  Edge,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import { useEffect, useState, useCallback, memo, useRef } from "react";
 import dagre from "dagre";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-// ─── custom node components ──────────────────────────────────────────────────
+// ─── local font declarations ──────────────────────────────────────────────────
 
-const StartNode = memo(({ sourcePosition }: NodeProps) => {
-  return (
-    <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-50/50 shadow-sm transition-transform duration-150 hover:scale-105">
-      <Handle
-        type="source"
-        position={sourcePosition ?? Position.Bottom}
-        isConnectable={false}
-        className="w-2 h-2 !bg-emerald-500"
-      />
-      <span className="text-emerald-700 font-bold text-xs pl-0.5">▶</span>
-    </div>
-  );
-});
-StartNode.displayName = "StartNode";
+const FONT_SANS = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const FONT_MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
-const EndNode = memo(({ targetPosition }: NodeProps) => {
-  return (
-    <div className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-rose-600 bg-rose-50/50 shadow-sm transition-transform duration-150 hover:scale-105">
-      <Handle
-        type="target"
-        position={targetPosition ?? Position.Top}
-        isConnectable={false}
-        className="w-2 h-2 !bg-rose-600"
-      />
-      <span className="text-rose-700 font-bold text-xs">■</span>
-    </div>
-  );
-});
-EndNode.displayName = "EndNode";
+// ─── local type declarations ──────────────────────────────────────────────────
 
-interface ActivityNodeData extends Record<string, unknown> {
+type Position = "Top" | "Bottom" | "Left" | "Right";
+
+interface ActivityNodeData {
+  id: string;
+  type: string;
   name: string;
   frequency: number;
   averageDuration: number;
@@ -60,132 +25,42 @@ interface ActivityNodeData extends Record<string, unknown> {
   automationLabel?: "LOW" | "MEDIUM" | "HIGH" | null;
 }
 
-const ActivityNode = memo(({
-  data,
-  selected,
-  targetPosition,
-  sourcePosition,
-}: NodeProps<Node<ActivityNodeData>>) => {
-  const formatDuration = (ms: number) => {
-    if (ms === 0) return "0ms";
-    const secs = ms / 1000;
-    if (secs < 60) return `${secs.toFixed(1)}s`;
-    const mins = secs / 60;
-    if (mins < 60) return `${mins.toFixed(1)}m`;
-    const hours = mins / 60;
-    if (hours < 24) return `${hours.toFixed(1)}h`;
-    const days = hours / 24;
-    return `${days.toFixed(1)}d`;
-  };
+interface CanvasNode {
+  id: string;
+  type: "start" | "end" | "activity";
+  data: ActivityNodeData;
+  position: { x: number; y: number };
+}
 
-  // determine color scheme based on automation potential
-  let cardStyles = "border-slate-400 bg-white text-slate-900";
-  let nameText = "text-slate-800";
-  let footerBorder = "border-slate-200";
-  let footerText = "text-slate-500";
-  let frequencyText = "text-slate-700";
-  let durationBadge = "bg-slate-100 text-slate-600";
-  
-  if (data.automationLabel === "HIGH") {
-    cardStyles = "border-emerald-500 bg-emerald-100/90 text-emerald-950 shadow-sm";
-    nameText = "text-emerald-900 font-bold";
-    footerBorder = "border-emerald-300/60";
-    footerText = "text-emerald-800";
-    frequencyText = "text-emerald-950 font-bold";
-    durationBadge = "bg-emerald-200 text-emerald-950 font-semibold";
-  } else if (data.automationLabel === "MEDIUM") {
-    cardStyles = "border-amber-500 bg-amber-100/90 text-amber-950 shadow-sm";
-    nameText = "text-amber-900 font-bold";
-    footerBorder = "border-amber-300/60";
-    footerText = "text-amber-800";
-    frequencyText = "text-amber-950 font-bold";
-    durationBadge = "bg-amber-200 text-amber-950 font-semibold";
-  } else if (data.automationLabel === "LOW") {
-    cardStyles = "border-rose-300 bg-rose-100/90 text-rose-950 shadow-sm";
-    nameText = "text-rose-900 font-bold";
-    footerBorder = "border-rose-300/60";
-    footerText = "text-rose-800";
-    frequencyText = "text-rose-950 font-bold";
-    durationBadge = "bg-rose-200 text-rose-950 font-semibold";
-  }
-
-  // selection highlight using scaling and a thick outline ring offset
-  const highlightStyles = selected
-    ? "scale-[1.04] z-50 shadow-xl outline outline-3 outline-offset-2 outline-blue-600"
-    : "hover:scale-[1.01] hover:shadow-md";
-
-  return (
-    <div
-      className={`relative flex flex-col justify-between p-2.5 h-24 w-56 rounded-lg border text-left transition-all duration-150 ${cardStyles} ${highlightStyles}`}
-    >
-      <Handle
-        type="target"
-        position={targetPosition ?? Position.Top}
-        isConnectable={false}
-        className="w-1.5 h-1.5 !bg-slate-400"
-      />
-      <Handle
-        type="source"
-        position={sourcePosition ?? Position.Bottom}
-        isConnectable={false}
-        className="w-1.5 h-1.5 !bg-slate-400"
-      />
-
-      {data.automationScore !== undefined && data.automationScore !== null && (
-        <span className={`absolute top-1.5 right-1.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-sm ${
-          data.automationLabel === "HIGH"
-            ? "bg-emerald-200 text-emerald-950 border border-emerald-300"
-            : data.automationLabel === "MEDIUM"
-            ? "bg-amber-200 text-amber-950 border border-amber-300"
-            : "bg-rose-200 text-rose-950 border border-rose-300"
-        }`}>
-          {data.automationScore}%
-        </span>
-      )}
-
-      {/* Centered Activity Name */}
-      <div className="flex-1 flex items-center justify-center mt-1.5 mb-1">
-        <p className={`text-center text-xs font-semibold line-clamp-2 px-1 max-h-[32px] overflow-hidden leading-tight ${nameText}`} title={data.name}>
-          {data.name}
-        </p>
-      </div>
-
-      {/* Metrics Footer */}
-      <div className={`flex justify-between items-center text-[9px] border-t pt-1.5 px-0.5 ${footerBorder} ${footerText}`}>
-        <span className={`font-semibold ${frequencyText}`}>{data.frequency.toLocaleString()}x</span>
-        <span className={`font-mono px-1 py-0.25 rounded text-[8px] ${durationBadge}`}>
-          {formatDuration(data.averageDuration)}
-        </span>
-        <span className="text-[8px] font-medium opacity-90">Cov: {(data.caseCoverage * 100).toFixed(0)}%</span>
-      </div>
-    </div>
-  );
-});
-ActivityNode.displayName = "ActivityNode";
-
-const nodeTypes = {
-  start: StartNode,
-  end: EndNode,
-  activity: ActivityNode,
-};
+interface CanvasEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  data: { count: number };
+  style?: { strokeWidth: number; stroke: string };
+}
 
 // ─── dagre auto-layout helper ───────────────────────────────────────────────
 
-const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = "TB") => {
+const getLayoutedElements = (
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  direction = "TB"
+): { nodes: CanvasNode[]; edges: CanvasEdge[] } => {
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: direction,
-    nodesep: 80, // spacing between sibling nodes
-    ranksep: 140, // spacing between sequential flow steps
+    nodesep: 100, // scaled spacing between sibling nodes
+    ranksep: 180, // scaled spacing between sequential steps
   });
   g.setDefaultEdgeLabel(() => ({}));
 
   nodes.forEach((node) => {
-    // set realistic dimensions of the rendered HTML nodes
     if (node.type === "start" || node.type === "end") {
-      g.setNode(node.id, { width: 48, height: 48 });
+      g.setNode(node.id, { width: 144, height: 144 });
     } else {
-      g.setNode(node.id, { width: 224, height: 96 });
+      g.setNode(node.id, { width: 336, height: 144 });
     }
   });
 
@@ -198,13 +73,11 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = "TB") => 
   return {
     nodes: nodes.map((node) => {
       const { x, y } = g.node(node.id);
-      const width = node.type === "start" || node.type === "end" ? 48 : 224;
-      const height = node.type === "start" || node.type === "end" ? 48 : 96;
+      const width = node.type === "start" || node.type === "end" ? 144 : 336;
+      const height = 144;
 
       return {
         ...node,
-        targetPosition: direction === "TB" ? Position.Top : Position.Left,
-        sourcePosition: direction === "TB" ? Position.Bottom : Position.Right,
         position: {
           x: x - width / 2, // centering offset correction
           y: y - height / 2,
@@ -225,6 +98,9 @@ interface ProcessGraphProps {
   nodeLimit?: number;
   onNodeLimitChange?: (limit: number) => void;
   reloadTrigger?: number;
+  isSidebarOpen?: boolean;
+  sidebarWidth?: number;
+  isResizing?: boolean;
 }
 
 export default function ProcessGraph({
@@ -235,15 +111,34 @@ export default function ProcessGraph({
   nodeLimit: propNodeLimit,
   onNodeLimitChange,
   reloadTrigger = 0,
+  isSidebarOpen = false,
+  sidebarWidth = 480,
+  isResizing = false,
 }: ProcessGraphProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [nodes, setNodes] = useState<CanvasNode[]>([]);
+  const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [direction, setDirection] = useState<"TB" | "LR">("LR");
-  const [localNodeLimit, setLocalNodeLimit] = useState(30);
-  const [sliderVal, setSliderVal] = useState(30);
+  const [localNodeLimit, setLocalNodeLimit] = useState(20);
+  const [sliderVal, setSliderVal] = useState(20);
   const [showLabels, setShowLabels] = useState(true);
+
+  // canvas transformation state
+  const [zoom, setZoom] = useState<number>(0.75);
+  const [offsetX, setOffsetX] = useState<number>(50);
+  const [offsetY, setOffsetY] = useState<number>(50);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const offsetStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const clickStartRef = useRef<number>(0);
 
   const nodeLimit = propNodeLimit !== undefined ? propNodeLimit : localNodeLimit;
   const setNodeLimit = (val: number) => {
@@ -253,10 +148,26 @@ export default function ProcessGraph({
     }
   };
 
+  // track container size changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      if (!entries || entries.length === 0) return;
+      const { width, height } = entries[0].contentRect;
+      setDimensions({ width, height });
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
   // reset slider states if process log changes
   useEffect(() => {
-    setNodeLimit(30);
-    setSliderVal(30);
+    setNodeLimit(20);
+    setSliderVal(20);
+    setSelectedNodeId(null);
   }, [processLogId]);
 
   // sync transient slider value with nodeLimit prop changes
@@ -286,40 +197,31 @@ export default function ProcessGraph({
         id: n.id,
         type: n.type,
         data: n,
-        position: { x: 0, y: 0 }, 
+        position: { x: 0, y: 0 },
       }));
 
-      // map API edges to React Flow edges
       const rawEdges = graphData.edges.map((e: any) => {
         const ratio = e.count / maxCount;
+        const strokeWidth = 1.5 + ratio * 3.0;
 
-        // 1. Thickness scale: 1.5px (rare) to 5.5px (most frequent)
-        const strokeWidth = 1.5 + ratio * 4;
-
-        // 2. 5-Tier Color Scale
-        let strokeColor = "#cbd5e1"; // tier 5: < 5% (Very light slate)
+        let strokeColor = "#94a3b8"; // tier 5: < 5% (slate-400)
         if (ratio >= 0.7) {
-          strokeColor = "#1d4ed8"; // tier 1: >= 70% (Deep Royal Blue)
+          strokeColor = "#4f46e5"; // tier 1: >= 70% (indigo-600)
         } else if (ratio >= 0.4) {
-          strokeColor = "#3b82f6"; // tier 2: 40% - 70% (Medium blue)
+          strokeColor = "#2563eb"; // tier 2: 40% - 70% (blue-600)
         } else if (ratio >= 0.15) {
-          strokeColor = "#475569"; // tier 3: 15% - 40% (Dark Slate)
+          strokeColor = "#0284c7"; // tier 3: 15% - 40% (sky-600)
         } else if (ratio >= 0.05) {
-          strokeColor = "#94a3b8"; // tier 4: 5% - 15% (Slate-400)
+          strokeColor = "#475569"; // tier 4: 5% - 15% (slate-600)
         }
 
         return {
           id: e.id,
           source: e.source,
           target: e.target,
-          type: "smoothstep", // use clean rounded 90-degree orthogonal line paths
           label: showLabels ? `${e.count}x` : undefined,
           data: { count: e.count },
           style: { strokeWidth, stroke: strokeColor },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: strokeColor,
-          },
         };
       });
 
@@ -336,52 +238,525 @@ export default function ProcessGraph({
     } finally {
       setLoading(false);
     }
-  }, [processLogId, direction, nodeLimit, showLabels, assessmentType, model, reloadTrigger, setNodes, setEdges]);
+  }, [processLogId, direction, nodeLimit, showLabels, assessmentType, model, reloadTrigger]);
 
   useEffect(() => {
     fetchGraph();
   }, [fetchGraph]);
 
-  // update edge labels dynamically when toggle changes
-  useEffect(() => {
-    setEdges((prevEdges) =>
-      prevEdges.map((edge) => {
-        const count = edge.data?.count;
-        return {
-          ...edge,
-          label: showLabels && count !== undefined ? `${count}x` : undefined,
-        };
-      })
-    );
-  }, [showLabels, setEdges]);
+  // fit graph to center screen bounds
+  const fitView = useCallback(() => {
+    if (nodes.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  const handleNodeClick = useCallback(
-    (_: any, node: Node) => {
-      if (onNodeSelect) {
-        if (node.type === "activity") {
-          onNodeSelect(node.id);
-        } else {
-          onNodeSelect(null);
+    const width = canvas.clientWidth || dimensions.width || 800;
+    const height = canvas.clientHeight || dimensions.height || 600;
+
+    const minX = Math.min(...nodes.map((n) => n.position.x));
+    const maxX = Math.max(
+      ...nodes.map((n) => n.position.x + (n.type === "start" || n.type === "end" ? 144 : 336))
+    );
+    const minY = Math.min(...nodes.map((n) => n.position.y));
+    const maxY = Math.max(...nodes.map((n) => n.position.y + 144));
+
+    const graphW = maxX - minX;
+    const graphH = maxY - minY;
+
+    const padding = 80;
+    const fitScaleX = (width - padding * 2) / graphW;
+    const fitScaleY = (height - padding * 2) / graphH;
+    const fitScale = Math.min(1.0, Math.max(0.15, Math.min(fitScaleX, fitScaleY)));
+
+    const nextOffsetX = (width - graphW * fitScale) / 2 - minX * fitScale;
+    const nextOffsetY = (height - graphH * fitScale) / 2 - minY * fitScale;
+
+    setZoom(fitScale);
+    setOffsetX(nextOffsetX);
+    setOffsetY(nextOffsetY);
+  }, [nodes, dimensions]);
+
+  // fit viewport on initial render layout load
+  useEffect(() => {
+    if (nodes.length > 0) {
+      fitView();
+    }
+  }, [nodes]);
+
+  // helper formatting routines
+  const formatDuration = (ms: number) => {
+    if (ms === 0) return "0ms";
+    const secs = ms / 1000;
+    if (secs < 60) return `${secs.toFixed(1)}s`;
+    const mins = secs / 60;
+    if (mins < 60) return `${mins.toFixed(1)}m`;
+    const hours = mins / 60;
+    if (hours < 24) return `${hours.toFixed(1)}h`;
+    const days = hours / 24;
+    return `${days.toFixed(1)}d`;
+  };
+
+  const wrapText = (
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number,
+    maxLines = 2
+  ) => {
+    const words = text.split(" ");
+    let line = "";
+    const lines = [];
+
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + " ";
+      const metrics = ctx.measureText(testLine);
+      const testWidth = metrics.width;
+      if (testWidth > maxWidth && n > 0) {
+        lines.push(line);
+        line = words[n] + " ";
+      } else {
+        line = testLine;
+      }
+    }
+    lines.push(line);
+
+    const linesToDraw = lines.slice(0, maxLines);
+    if (lines.length > maxLines) {
+      linesToDraw[maxLines - 1] = linesToDraw[maxLines - 1].trim() + "...";
+    }
+
+    const startY = y - ((linesToDraw.length - 1) * lineHeight) / 2;
+    for (let i = 0; i < linesToDraw.length; i++) {
+      ctx.fillText(linesToDraw[i].trim(), x, startY + i * lineHeight);
+    }
+  };
+
+  // graphic draw procedures
+  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const gridSize = 40;
+    const startX = Math.floor(-offsetX / zoom / gridSize) * gridSize;
+    const startY = Math.floor(-offsetY / zoom / gridSize) * gridSize;
+    const endX = startX + width / zoom + gridSize;
+    const endY = startY + height / zoom + gridSize;
+
+    ctx.strokeStyle = "#f8fafc";
+    ctx.lineWidth = 1 / zoom;
+
+    ctx.beginPath();
+    for (let x = startX; x < endX; x += gridSize) {
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
+    }
+    for (let y = startY; y < endY; y += gridSize) {
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+    }
+    ctx.stroke();
+  };
+
+  const drawEdge = (
+    ctx: CanvasRenderingContext2D,
+    edge: CanvasEdge,
+    sourceNode?: CanvasNode,
+    targetNode?: CanvasNode
+  ) => {
+    if (!sourceNode || !targetNode) return;
+
+    const srcW = sourceNode.type === "activity" ? 336 : 144;
+    const srcH = 144;
+    const tgtW = targetNode.type === "activity" ? 336 : 144;
+    const tgtH = 144;
+
+    let fromX = sourceNode.position.x + srcW;
+    let fromY = sourceNode.position.y + srcH / 2;
+    let toX = targetNode.position.x;
+    let toY = targetNode.position.y + tgtH / 2;
+
+    if (direction === "TB") {
+      fromX = sourceNode.position.x + srcW / 2;
+      fromY = sourceNode.position.y + srcH;
+      toX = targetNode.position.x + tgtW / 2;
+      toY = targetNode.position.y;
+    }
+
+    ctx.strokeStyle = edge.style?.stroke || "#94a3b8";
+    ctx.lineWidth = edge.style?.strokeWidth || 2;
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const angle = Math.atan2(dy, dx);
+    const arrowSize = 10;
+
+    ctx.fillStyle = edge.style?.stroke || "#94a3b8";
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(
+      toX - arrowSize * Math.cos(angle - Math.PI / 6),
+      toY - arrowSize * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+      toX - arrowSize * Math.cos(angle + Math.PI / 6),
+      toY - arrowSize * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    if (showLabels && edge.label) {
+      const midX = (fromX + toX) / 2;
+      const midY = (fromY + toY) / 2;
+      const text = edge.label;
+      ctx.font = `bold 9px ${FONT_SANS}`;
+      const txtW = ctx.measureText(text).width + 8;
+      const txtH = 14;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(midX - txtW / 2, midY - txtH / 2, txtW, txtH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#475569";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, midX, midY);
+    }
+  };
+
+  const drawNode = (
+    ctx: CanvasRenderingContext2D,
+    node: CanvasNode,
+    isHovered: boolean,
+    isSelected: boolean
+  ) => {
+    const { x, y } = node.position;
+    const isStartEnd = node.type === "start" || node.type === "end";
+    const w = isStartEnd ? 144 : 336;
+    const h = 144;
+
+    if (isSelected) {
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 6;
+      if (isStartEnd) {
+        ctx.beginPath();
+        ctx.arc(x + 72, y + 72, 77, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.roundRect(x - 4, y - 4, w + 8, h + 8, 14);
+        ctx.stroke();
+      }
+    }
+
+    if (node.type === "start") {
+      ctx.fillStyle = "#ecfdf5";
+      ctx.strokeStyle = "#10b981";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(x + 72, y + 72, 72, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#047857";
+      ctx.font = `bold 32px ${FONT_SANS}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("▶", x + 75, y + 72);
+    } else if (node.type === "end") {
+      ctx.fillStyle = "#fff1f2";
+      ctx.strokeStyle = "#e11d48";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(x + 72, y + 72, 72, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#be123c";
+      ctx.font = `bold 32px ${FONT_SANS}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("■", x + 72, y + 72);
+    } else {
+      let bgColor = "#ffffff";
+      let titleColor = "#1e293b";
+      let footerColor = "#64748b";
+      let badgeBg = "#f1f5f9";
+      let badgeText = "#475569";
+
+      if (node.data.automationLabel === "HIGH") {
+        bgColor = "#d1fae5";
+        titleColor = "#064e3b";
+        footerColor = "#065f46";
+        badgeBg = "#a7f3d0";
+        badgeText = "#064e3b";
+      } else if (node.data.automationLabel === "MEDIUM") {
+        bgColor = "#fef3c7";
+        titleColor = "#78350f";
+        footerColor = "#92400e";
+        badgeBg = "#fde68a";
+        badgeText = "#78350f";
+      } else if (node.data.automationLabel === "LOW") {
+        bgColor = "#ffe4e6";
+        titleColor = "#4c0519";
+        footerColor = "#9f1239";
+        badgeBg = "#fecdd3";
+        badgeText = "#4c0519";
+      }
+
+      ctx.fillStyle = bgColor;
+      ctx.strokeStyle = isHovered ? "#2563eb" : "#000000";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      const isLOD = zoom < 0.45;
+
+      if (!isLOD && node.data.automationScore !== undefined && node.data.automationScore !== null) {
+        ctx.fillStyle = badgeBg;
+        ctx.strokeStyle =
+          node.data.automationLabel === "HIGH"
+            ? "#6ee7b7"
+            : node.data.automationLabel === "MEDIUM"
+            ? "#fcd34d"
+            : "#fca5a5";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x + w - 55, y + 8, 48, 18, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = badgeText;
+        ctx.font = `bold 9px ${FONT_SANS}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`${node.data.automationScore}%`, x + w - 31, y + 17);
+      }
+
+      ctx.fillStyle = titleColor;
+      ctx.font = isLOD ? `bold 24px ${FONT_SANS}` : `bold 18px ${FONT_SANS}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      const txtX = x + w / 2;
+      const txtY = isLOD ? y + h / 2 : y + h / 2 - 14;
+      wrapText(ctx, node.data.name, txtX, txtY, w - 30, isLOD ? 28 : 22, isLOD ? 3 : 2);
+
+      if (!isLOD) {
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 10, y + h - 36);
+        ctx.lineTo(x + w - 10, y + h - 36);
+        ctx.stroke();
+
+        ctx.fillStyle = titleColor;
+        ctx.font = `bold 10px ${FONT_SANS}`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`${node.data.frequency.toLocaleString()}x`, x + 12, y + h - 18);
+
+        ctx.fillStyle = footerColor;
+        ctx.font = `500 9px ${FONT_SANS}`;
+        ctx.textAlign = "right";
+        ctx.fillText(`Cov: ${(node.data.caseCoverage * 100).toFixed(0)}%`, x + w - 12, y + h - 18);
+
+        const durTxt = formatDuration(node.data.averageDuration);
+        const bW = ctx.measureText(durTxt).width + 12;
+        const bX = x + w / 2 - bW / 2;
+
+        ctx.fillStyle = badgeBg;
+        ctx.beginPath();
+        ctx.roundRect(bX, y + h - 26, bW, 16, 4);
+        ctx.fill();
+
+        ctx.fillStyle = badgeText;
+        ctx.font = `9px ${FONT_MONO}`;
+        ctx.textAlign = "center";
+        ctx.fillText(durTxt, x + w / 2, y + h - 18);
+      }
+    }
+  };
+
+  // canvas paint effect loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth || dimensions.width || 800;
+    const height = canvas.clientHeight || dimensions.height || 600;
+    
+    // set actual screen pixel dimensions for high-DPI
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(zoom, zoom);
+
+    drawGrid(ctx, width, height);
+
+    edges.forEach((edge) => {
+      const srcNode = nodes.find((n) => n.id === edge.source);
+      const tgtNode = nodes.find((n) => n.id === edge.target);
+      drawEdge(ctx, edge, srcNode, tgtNode);
+    });
+
+    nodes.forEach((node) => {
+      const isHovered = hoveredNodeId === node.id;
+      const isSelected = selectedNodeId === node.id;
+      drawNode(ctx, node, isHovered, isSelected);
+    });
+
+    ctx.restore();
+  }, [nodes, edges, zoom, offsetX, offsetY, dimensions, hoveredNodeId, selectedNodeId, showLabels]);
+
+  // pointer position detection helper
+  const getNodeAtPosition = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = clientX - rect.left;
+    const mouseY = clientY - rect.top;
+
+    const graphX = (mouseX - offsetX) / zoom;
+    const graphY = (mouseY - offsetY) / zoom;
+
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const node = nodes[i];
+      const { x, y } = node.position;
+      const isStartEnd = node.type === "start" || node.type === "end";
+      const w = isStartEnd ? 144 : 336;
+      const h = 144;
+
+      if (isStartEnd) {
+        const centerX = x + 72;
+        const centerY = y + 72;
+        const dist = Math.sqrt((graphX - centerX) ** 2 + (graphY - centerY) ** 2);
+        if (dist <= 72) return node;
+      } else {
+        if (graphX >= x && graphX <= x + w && graphY >= y && graphY <= y + h) {
+          return node;
         }
       }
-    },
-    [onNodeSelect]
-  );
-
-  const handlePaneClick = useCallback(() => {
-    if (onNodeSelect) {
-      onNodeSelect(null);
     }
-  }, [onNodeSelect]);
+    return null;
+  };
+
+  // interactions pointer gesture handlers
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    clickStartRef.current = Date.now();
+    const node = getNodeAtPosition(e.clientX, e.clientY);
+    if (!node) {
+      dragStartRef.current = { x: e.clientX, y: e.clientY };
+      offsetStartRef.current = { x: offsetX, y: offsetY };
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    dragStartRef.current = null;
+    const clickDuration = Date.now() - clickStartRef.current;
+
+    if (clickDuration < 200) {
+      const node = getNodeAtPosition(e.clientX, e.clientY);
+      if (node) {
+        if (node.type === "activity") {
+          setSelectedNodeId(node.id);
+          if (onNodeSelect) onNodeSelect(node.id);
+        } else {
+          setSelectedNodeId(null);
+          if (onNodeSelect) onNodeSelect(null);
+        }
+      } else {
+        setSelectedNodeId(null);
+        if (onNodeSelect) onNodeSelect(null);
+      }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const hovered = getNodeAtPosition(e.clientX, e.clientY);
+    setHoveredNodeId(hovered ? hovered.id : null);
+    e.currentTarget.style.cursor = hovered
+      ? "pointer"
+      : dragStartRef.current
+      ? "grabbing"
+      : "grab";
+
+    if (dragStartRef.current) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      setOffsetX(offsetStartRef.current.x + dx);
+      setOffsetY(offsetStartRef.current.y + dy);
+    }
+  };
+
+  const handleMouseUpOrLeave = () => {
+    dragStartRef.current = null;
+  };
+
+  // attach non-passive wheel zoom listener to canvas to support trackpad pinch-zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const graphX = (mouseX - offsetX) / zoom;
+      const graphY = (mouseY - offsetY) / zoom;
+
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      const nextZoom = Math.min(4, Math.max(0.1, zoom * factor));
+
+      const nextOffsetX = mouseX - graphX * nextZoom;
+      const nextOffsetY = mouseY - graphY * nextZoom;
+
+      setZoom(nextZoom);
+      setOffsetX(nextOffsetX);
+      setOffsetY(nextOffsetY);
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [zoom, offsetX, offsetY]);
+
+  const zoomIn = () => {
+    setZoom((z) => Math.min(4, z * 1.2));
+  };
+  const zoomOut = () => {
+    setZoom((z) => Math.max(0.1, z / 1.2));
+  };
 
   const toggleDirection = () => {
     setDirection((prev) => (prev === "TB" ? "LR" : "TB"));
   };
 
-  // only render a full loading placeholder if we don't have any nodes loaded yet
   if (nodes.length === 0 && loading) {
     return (
-      <div className="flex h-[600px] items-center justify-center rounded-lg border-2 border-dashed bg-slate-50">
+      <div className="flex w-full h-full items-center justify-center rounded-lg border-2 border-dashed bg-slate-50/50">
         <p className="text-slate-500 animate-pulse font-medium">Computing process map layout...</p>
       </div>
     );
@@ -389,7 +764,7 @@ export default function ProcessGraph({
 
   if (error) {
     return (
-      <div className="flex h-[600px] flex-col items-center justify-center rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+      <div className="flex w-full h-full flex-col items-center justify-center rounded-lg border border-red-200 bg-red-50 p-6 text-center">
         <p className="text-red-700 font-semibold mb-2">Error loading process graph</p>
         <p className="text-red-600 text-sm">{error}</p>
         <Button className="mt-4" onClick={fetchGraph}>
@@ -400,16 +775,60 @@ export default function ProcessGraph({
   }
 
   return (
-    <Card className="relative w-full h-[600px] border shadow-md overflow-hidden bg-slate-50">
-      {/* loading overlay (stops unmounting/remounting ReactFlow) */}
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-white select-none">
       {loading && (
         <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-20 flex items-center justify-center transition-all">
           <p className="text-slate-600 font-semibold animate-pulse">Recalculating layout...</p>
         </div>
       )}
 
-      {/* controls overlay */}
-      <div className="absolute left-4 top-4 z-10 flex gap-2">
+      {/* Canvas rendering view */}
+      <canvas
+        ref={canvasRef}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseUpOrLeave}
+        className="absolute inset-0 block w-full h-full select-none"
+      />
+
+      {/* Zoom and view options buttons */}
+      <div
+        style={{ left: `${isSidebarOpen ? sidebarWidth + 16 : 16}px` }}
+        className={`absolute bottom-4 z-10 flex flex-col bg-white border rounded-lg shadow-sm overflow-hidden ${
+          isResizing ? "transition-none" : "transition-all duration-300 ease-in-out"
+        }`}
+      >
+        <button
+          onClick={zoomIn}
+          className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-bold border-b text-sm"
+          title="Zoom In"
+        >
+          ＋
+        </button>
+        <button
+          onClick={zoomOut}
+          className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-bold border-b text-sm"
+          title="Zoom Out"
+        >
+          －
+        </button>
+        <button
+          onClick={fitView}
+          className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 text-xs font-bold"
+          title="Fit View"
+        >
+          ⛶
+        </button>
+      </div>
+
+      {/* Layout controllers */}
+      <div
+        style={{ left: `${isSidebarOpen ? sidebarWidth + 76 : 64}px` }}
+        className={`absolute bottom-4 z-10 flex gap-2 ${
+          isResizing ? "transition-none" : "transition-all duration-300 ease-in-out"
+        }`}
+      >
         <Button variant="secondary" size="sm" onClick={toggleDirection} className="shadow-sm">
           Layout: {direction === "TB" ? "Vertical" : "Horizontal"}
         </Button>
@@ -425,42 +844,6 @@ export default function ProcessGraph({
           Reload
         </Button>
       </div>
-
-      {/* detail level slider overlay */}
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-3 bg-white px-3 py-1.5 rounded-md border shadow-sm text-xs font-medium">
-        <span className="text-slate-500 font-semibold">Detail:</span>
-        <input
-          type="range"
-          min="10"
-          max="100"
-          step="10"
-          value={sliderVal}
-          onChange={(e) => setSliderVal(parseInt(e.target.value, 10))}
-          onMouseUp={() => setNodeLimit(sliderVal)}
-          onTouchEnd={() => setNodeLimit(sliderVal)}
-          className="w-20 cursor-pointer accent-blue-600 h-1.5 bg-slate-100 rounded-lg appearance-none"
-        />
-        <span className="text-slate-700 w-6 text-right font-bold">{sliderVal} nodes</span>
-      </div>
-
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        onPaneClick={handlePaneClick}
-        nodeTypes={nodeTypes}
-        onlyRenderVisibleElements={true}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        minZoom={0.05}
-        maxZoom={4}
-        fitView
-        fitViewOptions={{ padding: 0.1, maxZoom: 1 }}
-      >
-        <Controls showInteractive={false} />
-      </ReactFlow>
-    </Card>
+    </div>
   );
 }
