@@ -43,14 +43,8 @@ export default function ActivityDetailsPanel({
   getSubScores,
 }: ActivityDetailsPanelProps) {
   return (
-    <Card className="min-h-[200px] flex flex-col border shadow-md">
-      <CardHeader className="border-b bg-slate-50/50">
-        <CardTitle>Activity Details</CardTitle>
-        <CardDescription>
-          {selectedActivity ? "Profile and metrics" : "No activity selected"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-center p-6 overflow-y-auto">
+    <div className="min-h-[200px] flex flex-col">
+      <div className="flex-1 flex flex-col justify-center">
         {activity ? (
           <div className="space-y-6 text-left">
             {/* title and primary status */}
@@ -514,7 +508,7 @@ export default function ActivityDetailsPanel({
               </p>
             </div>
           )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
