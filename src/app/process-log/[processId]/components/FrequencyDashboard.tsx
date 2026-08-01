@@ -7,6 +7,7 @@ interface FrequencyDashboardProps {
   totalEvents: number;
   hoveredSlice: number | null;
   setHoveredSlice: (index: number | null) => void;
+  isExpanded?: boolean;
 }
 
 const sliceColors = [
@@ -29,9 +30,10 @@ export default function FrequencyDashboard({
   totalEvents,
   hoveredSlice,
   setHoveredSlice,
+  isExpanded = false,
 }: FrequencyDashboardProps) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <div className={`grid gap-8 ${isExpanded ? "grid-cols-2" : "grid-cols-1"}`}>
       {/* left column: horizontal bar chart */}
       <div className="space-y-4">
         <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
@@ -70,7 +72,7 @@ export default function FrequencyDashboard({
           Activity Volume Share
           <MetricTooltip text="Relative percentage share of total event volume by activity." />
         </h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center">
+        <div className={`grid gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center ${isExpanded ? "grid-cols-2" : "grid-cols-1"}`}>
           {/* circular donut */}
           <div className="relative flex justify-center items-center h-44">
             <svg width="160" height="160" viewBox="0 0 160 160">

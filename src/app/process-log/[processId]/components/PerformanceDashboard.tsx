@@ -8,6 +8,7 @@ interface PerformanceDashboardProps {
   formatDuration: (ms: number) => string;
   top10Entropy: { name: string; predecessorEntropy: number; successorEntropy: number }[];
   maxEntropyValue: number;
+  isExpanded?: boolean;
 }
 
 export default function PerformanceDashboard({
@@ -18,9 +19,10 @@ export default function PerformanceDashboard({
   formatDuration,
   top10Entropy,
   maxEntropyValue,
+  isExpanded = false,
 }: PerformanceDashboardProps) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <div className={`grid gap-8 ${isExpanded ? "grid-cols-2" : "grid-cols-1"}`}>
       {/* left column: execution duration per activity (toggleable) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

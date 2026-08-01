@@ -7,6 +7,7 @@ interface FeasibilityMatrixProps {
   assessments: Assessment[];
   onSelectAndCompare: (activityName: string, activeAssessmentsCount: number) => void;
   formatCost: (costUsd: number | null | undefined, modelId: string | null | undefined) => string;
+  isExpanded?: boolean;
 }
 
 export default function FeasibilityMatrix({
@@ -14,6 +15,7 @@ export default function FeasibilityMatrix({
   assessments,
   onSelectAndCompare,
   formatCost,
+  isExpanded = false,
 }: FeasibilityMatrixProps) {
   const totalLlmCostUsd = assessments
     ? assessments
@@ -23,7 +25,7 @@ export default function FeasibilityMatrix({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-slate-50 p-4 border border-slate-200 rounded-lg">
+      <div className={`flex gap-3 bg-slate-50 p-4 border border-slate-200 rounded-lg ${isExpanded ? "flex-row items-center justify-between" : "flex-col justify-start"}`}>
         <div>
           <h4 className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1">
             Feasibility Scoring Matrix
