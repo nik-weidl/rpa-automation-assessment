@@ -44,6 +44,10 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [colorSource, setColorSource] = useState<"RULE_BASED" | "LLM">("RULE_BASED");
   const [graphModel, setGraphModel] = useState<string>("~google/gemini-pro-latest");
   const [nodeLimit, setNodeLimit] = useState<number>(20);
+  const [sliderDensity, setSliderDensity] = useState<number>(20);
+  useEffect(() => {
+    setSliderDensity(nodeLimit);
+  }, [nodeLimit]);
   const [batchScope, setBatchScope] = useState<"all" | "visible">("all");
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -698,7 +702,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
             <div className="space-y-1.5">
               <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                 <span>Node Density</span>
-                <span className="teal-text text-darken-1 font-bold normal-case font-mono">{nodeLimit} nodes</span>
+                <span className="teal-text text-darken-1 font-bold normal-case font-mono">{sliderDensity} nodes</span>
               </div>
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-sm" style={{ padding: "8px" }}>
                 <input
@@ -706,8 +710,10 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   min="10"
                   max="100"
                   step="10"
-                  value={nodeLimit}
-                  onChange={(e) => setNodeLimit(parseInt(e.target.value, 10))}
+                  value={sliderDensity}
+                  onChange={(e) => setSliderDensity(parseInt(e.target.value, 10))}
+                  onMouseUp={() => setNodeLimit(sliderDensity)}
+                  onTouchEnd={() => setNodeLimit(sliderDensity)}
                   className="flex-1 cursor-pointer accent-teal-600 h-1 bg-slate-200 rounded-lg appearance-none"
                 />
               </div>

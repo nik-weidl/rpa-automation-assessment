@@ -140,6 +140,8 @@ export default function ProcessGraph({
   const offsetStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const clickStartRef = useRef<number>(0);
   const dragDistanceRef = useRef<number>(0);
+  const layoutCacheRef = useRef<Record<string, Record<string, { x: number; y: number }>>>({});
+  const lastLayoutKeyRef = useRef<string>("");
 
   const nodeLimit = propNodeLimit !== undefined ? propNodeLimit : localNodeLimit;
   const setNodeLimit = (val: number) => {
@@ -226,11 +228,35 @@ export default function ProcessGraph({
         };
       });
 
-      const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-        rawNodes,
-        rawEdges,
-        direction
-      );
+      const layoutKey = `${processLogId}-${nodeLimit}-${direction}`;
+      let layoutedNodes: CanvasNode[];
+      let layoutedEdges: CanvasEdge[];
+
+       const cachedPositions = layoutCacheRef.current[layoutKey];
+       const isCacheHit = cachedPositions && rawNodes.every((n: CanvasNode) => n.id in cachedPositions);
+ 
+       if (isCacheHit) {
+         layoutedNodes = rawNodes.map((node: CanvasNode) => ({
+           ...node,
+           position: { ...cachedPositions[node.id] },
+         }));
+         layoutedEdges = rawEdges;
+      } else {
+        const layoutResult = getLayoutedElements(
+          rawNodes,
+          rawEdges,
+          direction
+        );
+        layoutedNodes = layoutResult.nodes;
+        layoutedEdges = layoutResult.edges;
+
+        // save to cache
+        const positions: Record<string, { x: number; y: number }> = {};
+        layoutedNodes.forEach((node) => {
+          positions[node.id] = { ...node.position };
+        });
+        layoutCacheRef.current[layoutKey] = positions;
+      }
 
       setNodes(layoutedNodes);
       setEdges(layoutedEdges);
@@ -279,10 +305,12 @@ export default function ProcessGraph({
 
   // fit viewport on initial render layout load and size updates
   useEffect(() => {
-    if (nodes.length > 0) {
+    const currentLayoutKey = `${processLogId}-${nodeLimit}-${direction}`;
+    if (nodes.length > 0 && lastLayoutKeyRef.current !== currentLayoutKey) {
+      lastLayoutKeyRef.current = currentLayoutKey;
       fitView();
     }
-  }, [nodes, fitView]);
+  }, [nodes, processLogId, nodeLimit, direction, fitView]);
 
   // helper formatting routines
   const formatDuration = (ms: number) => {
