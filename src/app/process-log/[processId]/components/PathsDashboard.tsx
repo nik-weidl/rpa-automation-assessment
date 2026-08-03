@@ -13,16 +13,16 @@ interface PathsDashboardProps {
 }
 
 const sliceColors = [
-  "#3b82f6", // blue
-  "#6366f1", // indigo
-  "#8b5cf6", // purple
-  "#ec4899", // pink
-  "#f43f5e", // rose
-  "#f97316", // orange
-  "#eab308", // yellow
-  "#10b981", // emerald
-  "#14b8a6", // teal
-  "#06b6d4", // cyan
+  "#009688", // teal
+  "#00bcd4", // cyan
+  "#2196f3", // blue
+  "#3f51b5", // indigo
+  "#673ab7", // deep purple
+  "#e91e63", // pink
+  "#f44336", // red
+  "#ff9800", // orange
+  "#ffeb3b", // yellow
+  "#4caf50", // green
 ];
 
 export default function PathsDashboard({
@@ -37,41 +37,41 @@ export default function PathsDashboard({
   isExpanded = false,
 }: PathsDashboardProps) {
   return (
-    <div className={`grid gap-8 ${isExpanded ? "grid-cols-2" : "grid-cols-1"}`}>
+    <div className={`grid gap-8 ${isExpanded ? "grid-cols-2" : "grid-cols-1"} font-sans`}>
       {/* left column: top 10 transitions bar chart */}
       <div className="space-y-4">
-        <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+        <span className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1 block">
           Top 10 Sequence Transitions
           <MetricTooltip text="shows the most frequent transitions between consecutive activities." />
-        </h4>
-        <div className="space-y-3 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] flex flex-col justify-between">
+        </span>
+        <div className="card bg-white z-depth-1 border border-slate-200 rounded-sm p-5 min-h-[250px] flex flex-col justify-between">
           {top10Transitions.length > 0 ? (
             top10Transitions.map((trans) => {
               const percent = maxTransitionCount > 0 ? (trans.count / maxTransitionCount) * 100 : 0;
               return (
                 <div key={trans.id} className="flex items-center text-xs gap-3">
                   <span
-                    className="w-36 text-slate-600 font-medium truncate flex items-center gap-1"
+                    className="w-36 text-slate-650 font-medium truncate flex items-center gap-1"
                     title={`${trans.source} → ${trans.target}`}
                   >
                     <span className="truncate max-w-[64px]">{trans.source}</span>
                     <span className="text-slate-400 text-[10px]">→</span>
                     <span className="truncate max-w-[64px]">{trans.target}</span>
                   </span>
-                  <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden relative group">
+                  <div className="flex-1 h-2 bg-slate-100 rounded-xs overflow-hidden relative">
                     <div
                       style={{ width: `${percent}%` }}
-                      className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500 group-hover:brightness-110"
+                      className="h-full bg-teal-500 rounded-xs transition-all duration-500"
                     />
                   </div>
-                  <span className="w-12 text-right font-semibold text-slate-700">
+                  <span className="w-12 text-right font-bold text-slate-700">
                     {trans.count.toLocaleString()}
                   </span>
                 </div>
               );
             })
           ) : (
-            <div className="flex-1 flex items-center justify-center text-slate-400">
+            <div className="flex-1 flex items-center justify-center text-slate-400 font-light">
               No transitions found
             </div>
           )}
@@ -81,42 +81,42 @@ export default function PathsDashboard({
       {/* right column: toggleable start and end step donut chart */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
-            Start & End Step Distribution
+          <span className="text-xs uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1 block">
+            Start & End Distribution
             <MetricTooltip text="distribution of activities that initiate or terminate cases." />
-          </h4>
+          </span>
           {/* start/end step toggle buttons */}
-          <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200">
+          <div className="flex bg-slate-100 p-0.5 rounded-sm border border-slate-200">
             <button
               onClick={() => {
                 setActiveTransitionType("start");
                 setHoveredPathSlice(null);
               }}
-              className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+              className={`px-3 py-1 text-[9px] uppercase tracking-wider font-bold rounded-sm transition-all cursor-pointer ${
                 activeTransitionType === "start"
                   ? "bg-white text-slate-800 shadow-sm"
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Start Steps
+              Start
             </button>
             <button
               onClick={() => {
                 setActiveTransitionType("end");
                 setHoveredPathSlice(null);
               }}
-              className={`px-2 py-1 text-[10px] font-bold rounded transition-colors ${
+              className={`px-3 py-1 text-[9px] uppercase tracking-wider font-bold rounded-sm transition-all cursor-pointer ${
                 activeTransitionType === "end"
                   ? "bg-white text-slate-800 shadow-sm"
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              End Steps
+              End
             </button>
           </div>
         </div>
 
-        <div className={`grid gap-4 bg-slate-50/50 p-4 rounded-lg border border-slate-100 min-h-[250px] items-center ${isExpanded ? "grid-cols-2" : "grid-cols-1"}`}>
+        <div className={`card bg-white z-depth-1 border border-slate-200 rounded-sm p-5 min-h-[250px] items-center grid gap-4 ${isExpanded ? "grid-cols-2" : "grid-cols-1"}`}>
           {/* circular path donut */}
           <div className="relative flex justify-center items-center h-44">
             <svg width="160" height="160" viewBox="0 0 160 160">
@@ -193,7 +193,7 @@ export default function PathsDashboard({
           </div>
 
           {/* path legend list */}
-          <div className="space-y-1.5 justify-center flex flex-col">
+          <div className="space-y-1.5 justify-center flex flex-col w-full">
             {pathDonutData.length > 0 ? (
               pathDonutData.map((slice, index) => {
                 const color = sliceColors[index % sliceColors.length];
@@ -201,8 +201,8 @@ export default function PathsDashboard({
                 return (
                   <div
                     key={slice.name}
-                    className={`flex items-center text-xs justify-between p-1 rounded transition-colors duration-150 ${
-                      isHovered ? "bg-white shadow-sm border border-slate-100" : "border border-transparent"
+                    className={`flex items-center text-xs justify-between p-1.5 rounded-sm transition-all duration-150 ${
+                      isHovered ? "bg-slate-50 border border-slate-200 shadow-sm" : "border border-transparent"
                     }`}
                     onMouseEnter={() => setHoveredPathSlice(index)}
                     onMouseLeave={() => setHoveredPathSlice(null)}
@@ -212,18 +212,18 @@ export default function PathsDashboard({
                         className="w-3 h-3 rounded-full flex-shrink-0"
                         style={{ backgroundColor: color }}
                       />
-                      <span className="text-slate-600 font-medium truncate" title={slice.name}>
+                      <span className="text-slate-650 font-medium truncate" title={slice.name}>
                         {slice.name}
                       </span>
                     </div>
-                    <span className="text-slate-700 font-semibold flex-shrink-0">
+                    <span className="text-slate-700 font-bold flex-shrink-0">
                       {slice.percentage.toFixed(1)}%
                     </span>
                   </div>
                 );
               })
             ) : (
-              <div className="text-center text-slate-400 italic">No start/end data</div>
+              <div className="text-center text-slate-400 font-light italic">No start/end data</div>
             )}
           </div>
         </div>

@@ -139,6 +139,7 @@ export default function ProcessGraph({
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const offsetStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const clickStartRef = useRef<number>(0);
+  const dragDistanceRef = useRef<number>(0);
 
   const nodeLimit = propNodeLimit !== undefined ? propNodeLimit : localNodeLimit;
   const setNodeLimit = (val: number) => {
@@ -276,12 +277,12 @@ export default function ProcessGraph({
     setOffsetY(nextOffsetY);
   }, [nodes, dimensions]);
 
-  // fit viewport on initial render layout load
+  // fit viewport on initial render layout load and size updates
   useEffect(() => {
     if (nodes.length > 0) {
       fitView();
     }
-  }, [nodes]);
+  }, [nodes, fitView]);
 
   // helper formatting routines
   const formatDuration = (ms: number) => {
@@ -659,19 +660,20 @@ export default function ProcessGraph({
 
   // interactions pointer gesture handlers
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.stopPropagation();
     clickStartRef.current = Date.now();
-    const node = getNodeAtPosition(e.clientX, e.clientY);
-    if (!node) {
-      dragStartRef.current = { x: e.clientX, y: e.clientY };
-      offsetStartRef.current = { x: offsetX, y: offsetY };
-    }
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    offsetStartRef.current = { x: offsetX, y: offsetY };
+    dragDistanceRef.current = 0;
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.stopPropagation();
     dragStartRef.current = null;
     const clickDuration = Date.now() - clickStartRef.current;
+    const dragDistance = dragDistanceRef.current;
 
-    if (clickDuration < 200) {
+    if (clickDuration < 300 || dragDistance < 6) {
       const node = getNodeAtPosition(e.clientX, e.clientY);
       if (node) {
         if (node.type === "activity") {
@@ -704,6 +706,7 @@ export default function ProcessGraph({
     if (dragStartRef.current) {
       const dx = e.clientX - dragStartRef.current.x;
       const dy = e.clientY - dragStartRef.current.y;
+      dragDistanceRef.current = Math.sqrt(dx * dx + dy * dy);
       setOffsetX(offsetStartRef.current.x + dx);
       setOffsetY(offsetStartRef.current.y + dy);
     }
@@ -794,28 +797,28 @@ export default function ProcessGraph({
 
       {/* Zoom and view options buttons */}
       <div
-        style={{ left: `${isSidebarOpen ? sidebarWidth + 16 : 16}px` }}
-        className={`absolute bottom-4 z-10 flex flex-col bg-white border rounded-lg shadow-sm overflow-hidden ${
+        style={{ left: `${isSidebarOpen ? sidebarWidth + 16 : 16}px`, zIndex: 40 }}
+        className={`absolute bottom-4 flex flex-col bg-white border border-slate-300 rounded-sm shadow-sm overflow-hidden ${
           isResizing ? "transition-none" : "transition-all duration-300 ease-in-out"
         }`}
       >
         <button
           onClick={zoomIn}
-          className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-bold border-b text-sm"
+          className="w-8 h-8 flex items-center justify-center text-slate-650 hover:bg-slate-50 font-bold border-b border-slate-200 text-sm cursor-pointer border-0 bg-transparent"
           title="Zoom In"
         >
           ＋
         </button>
         <button
           onClick={zoomOut}
-          className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-bold border-b text-sm"
+          className="w-8 h-8 flex items-center justify-center text-slate-650 hover:bg-slate-50 font-bold border-b border-slate-200 text-sm cursor-pointer border-0 bg-transparent"
           title="Zoom Out"
         >
           －
         </button>
         <button
           onClick={fitView}
-          className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 text-xs font-bold"
+          className="w-8 h-8 flex items-center justify-center text-slate-650 hover:bg-slate-50 text-xs font-bold cursor-pointer border-0 bg-transparent"
           title="Fit View"
         >
           ⛶
@@ -824,25 +827,32 @@ export default function ProcessGraph({
 
       {/* Layout controllers */}
       <div
-        style={{ left: `${isSidebarOpen ? sidebarWidth + 76 : 64}px` }}
-        className={`absolute bottom-4 z-10 flex gap-2 ${
+        style={{ left: `${isSidebarOpen ? sidebarWidth + 76 : 64}px`, zIndex: 40 }}
+        className={`absolute bottom-4 flex gap-2 ${
           isResizing ? "transition-none" : "transition-all duration-300 ease-in-out"
         }`}
       >
-        <Button variant="secondary" size="sm" onClick={toggleDirection} className="shadow-sm">
+        <button
+          onClick={toggleDirection}
+          className="btn-small waves-effect waves-light white text-slate-800 cursor-pointer font-semibold uppercase tracking-wider text-[10px]"
+          style={{ height: "32px", lineHeight: "32px", color: "#333", backgroundColor: "#fff", border: "1px solid #cbd5e1", display: "inline-flex", alignItems: "center", padding: "0 12px" }}
+        >
           Layout: {direction === "TB" ? "Vertical" : "Horizontal"}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
+        </button>
+        <button
           onClick={() => setShowLabels((prev) => !prev)}
-          className="shadow-sm bg-white border border-slate-200"
+          className="btn-small waves-effect waves-light white text-slate-800 cursor-pointer font-semibold uppercase tracking-wider text-[10px]"
+          style={{ height: "32px", lineHeight: "32px", color: "#333", backgroundColor: "#fff", border: "1px solid #cbd5e1", display: "inline-flex", alignItems: "center", padding: "0 12px" }}
         >
           {showLabels ? "Hide Path Counts" : "Show Path Counts"}
-        </Button>
-        <Button variant="outline" size="sm" onClick={fetchGraph} className="shadow-sm bg-white">
+        </button>
+        <button
+          onClick={fetchGraph}
+          className="btn-small waves-effect waves-light white text-slate-800 cursor-pointer font-semibold uppercase tracking-wider text-[10px]"
+          style={{ height: "32px", lineHeight: "32px", color: "#333", backgroundColor: "#fff", border: "1px solid #cbd5e1", display: "inline-flex", alignItems: "center", padding: "0 12px" }}
+        >
           Reload
-        </Button>
+        </button>
       </div>
     </div>
   );

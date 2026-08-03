@@ -1,27 +1,81 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-4xl mx-auto text-center space-y-8">
-        <div className="space-y-4">
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900">
-            Agentic RPA Assessment Tool
-          </h1>
-          <p className="text-xl text-gray-600">
-            Analyze process mining event logs and evaluate automation potential with AI-powered insights
-          </p>
+    <div className="container section font-sans" style={{ marginTop: "8%" }}>
+      <div className="row center-align">
+        <div className="col s12">
+          {/* openrouter agent badge */}
+          <div 
+            className="chip teal lighten-5 teal-text text-darken-3 font-semibold uppercase tracking-wider text-xs"
+            style={{ border: "1px solid #e0f2f1" }}
+          >
+            <i className="material-icons left">flash_on</i>
+            powered by openrouter agents
+          </div>
+
+          {/* heading block */}
+          <div className="section">
+            <h1 className="text-3xl md:text-5xl font-light grey-text text-darken-3 uppercase tracking-wide leading-tight">
+              Agentic <span className="teal-text text-darken-1 font-bold">RPA Assessment</span>
+            </h1>
+            <p className="grey-text text-darken-1 font-light max-w-xl mx-auto" style={{ fontSize: "16px", marginTop: "15px" }}>
+              Ingest process mining event logs, model transition pathways in custom graphics, and assess automation potential with advanced agentic thought flows.
+            </p>
+          </div>
+
+          {/* main CTA button */}
+          <div className="section">
+            <Link href="/upload">
+              <button className="btn-large waves-effect waves-light teal darken-1 uppercase tracking-wider font-semibold">
+                Get Started
+                <i className="material-icons right">arrow_forward</i>
+              </button>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <div className="divider" style={{ margin: "40px 0" }}></div>
+
+      {/* features display grid */}
+      <div className="row">
+        <div className="col s12 m4">
+          <div className="card hoverable" style={{ borderTop: "4px solid #00897b" }}>
+            <div className="card-content center-align">
+              <div className="section">
+                <i className="material-icons medium teal-text text-darken-1">show_chart</i>
+              </div>
+              <span className="card-title font-semibold uppercase text-sm tracking-wider text-slate-800" style={{ fontSize: "15px", fontWeight: "bold" }}>XES Mining</span>
+              <p className="grey-text text-darken-1 font-light" style={{ fontSize: "13px" }}>Interactive Canvas Maps</p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex gap-4 justify-center">
-          <Link href="/upload">
-            <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
-              Get Started
-            </Button>
-          </Link>
+        <div className="col s12 m4">
+          <div className="card hoverable" style={{ borderTop: "4px solid #ef6c00" }}>
+            <div className="card-content center-align">
+              <div className="section">
+                <i className="material-icons medium orange-text text-darken-3">memory</i>
+              </div>
+              <span className="card-title font-semibold uppercase text-sm tracking-wider text-slate-800" style={{ fontSize: "15px", fontWeight: "bold" }}>AI Metrics</span>
+              <p className="grey-text text-darken-1 font-light" style={{ fontSize: "13px" }}>Automated Feasibility Scores</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="col s12 m4">
+          <div className="card hoverable" style={{ borderTop: "4px solid #d81b60" }}>
+            <div className="card-content center-align">
+              <div className="section">
+                <i className="material-icons medium pink-text text-darken-1">auto_awesome</i>
+              </div>
+              <span className="card-title font-semibold uppercase text-sm tracking-wider text-slate-800" style={{ fontSize: "15px", fontWeight: "bold" }}>Multi-Model</span>
+              <p className="grey-text text-darken-1 font-light" style={{ fontSize: "13px" }}>Scoring Benchmarking</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

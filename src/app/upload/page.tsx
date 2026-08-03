@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, DragEvent, ChangeEvent } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { ProcessLog } from "@/types/models";
 
@@ -50,7 +48,6 @@ export default function UploadPage() {
       return;
     }
 
-    // just to be safe, check file size
     if (file.size > 100 * 1024 * 1024) {
       setError("File too large (max 100MB)");
       return;
@@ -83,7 +80,6 @@ export default function UploadPage() {
         fileInputRef.current.value = "";
       }
 
-      // Refresh list
       await fetchUploadedLogs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -181,101 +177,182 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="space-y-8 p-8 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-4xl font-bold">Import XES Event Logs</h1>
-        <p className="text-muted-foreground mt-2">Upload process mining event logs in XES format</p>
+    <div className="container section font-sans grey-text text-darken-3">
+      <div className="row">
+        <div className="col s12">
+          <h4 className="grey-text text-darken-3 font-light uppercase tracking-wide flex items-center gap-2">
+            <i className="material-icons medium teal-text text-darken-1">cloud_upload</i>
+            Import XES Event Logs
+          </h4>
+          <p className="grey-text text-darken-1 font-light" style={{ fontSize: "14px", marginTop: "5px" }}>
+            Ingest and store event transaction traces to evaluate candidate activities for RPA.
+          </p>
+        </div>
       </div>
 
-      {/* Drag-and-Drop Area */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Upload XES File</CardTitle>
-          <CardDescription>Drag and drop or click to select</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition ${
-              isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-gray-400"
-            }`}
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileInput}
-              accept=".xes"
-              className="hidden"
-              disabled={isUploading}
-            />
+      {/* Drag-and-Drop Area Card */}
+      <div className="row">
+        <div className="col s12">
+          <div className="card hoverable">
+            <div className="card-content">
+              <span className="card-title font-semibold uppercase text-slate-800" style={{ fontSize: "16px" }}>Upload XES File</span>
+              <p className="grey-text text-darken-1 font-light text-xs" style={{ marginBottom: "20px" }}>Drag and drop files directly or select them manually.</p>
 
-            <div onClick={() => fileInputRef.current?.click()} className="space-y-4">
-              <div className="text-5xl">📁</div>
-              <div>
-                <p className="text-lg font-semibold">Drop XES file here</p>
-                <p className="text-sm text-muted-foreground">or click to browse (max 100MB)</p>
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className="center-align cursor-pointer"
+                style={{
+                  border: "2px dashed #00897b",
+                  backgroundColor: isDragging ? "rgba(0, 137, 123, 0.05)" : "#fafafa",
+                  padding: "50px 20px",
+                  borderRadius: "2px",
+                  transition: "all 0.2s"
+                }}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileInput}
+                  accept=".xes"
+                  className="hidden"
+                  disabled={isUploading}
+                />
+
+                <div 
+                  className="btn-floating btn-large white teal-text text-darken-1 z-depth-1"
+                  style={{ marginBottom: "15px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                >
+                  <i className="material-icons teal-text text-darken-1" style={{ fontSize: "30px", lineHeight: "56px" }}>insert_drive_file</i>
+                </div>
+
+                <p className="font-semibold uppercase tracking-wider text-slate-850 text-xs" style={{ margin: "5px 0" }}>Drop XES log file here</p>
+                <p className="grey-text text-darken-1 font-light text-xs" style={{ margin: 0 }}>or click to browse local files (max 100MB)</p>
+
+                {isUploading && (
+                  <div 
+                    className="teal lighten-5 teal-text text-darken-3 font-semibold uppercase tracking-wider text-xs"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "8px 16px",
+                      marginTop: "20px",
+                      borderRadius: "2px",
+                      border: "1px solid #b2dfdb"
+                    }}
+                  >
+                    <div className="preloader-wrapper small active" style={{ width: "16px", height: "16px" }}>
+                      <div className="spinner-layer stroke-teal">
+                        <div className="circle-clipper left"><div className="circle"></div></div>
+                        <div className="gap-patch"><div className="circle"></div></div>
+                        <div className="circle-clipper right"><div className="circle"></div></div>
+                      </div>
+                    </div>
+                    <span>Uploading and parsing event logs...</span>
+                  </div>
+                )}
               </div>
 
-              {isUploading && <p className="text-sm text-blue-600">Uploading...</p>}
+              {error && (
+                <div className="card-panel red lighten-5 red-text text-darken-4 font-semibold text-xs" style={{ marginTop: "20px", padding: "12px" }}>
+                  <span>⚠️ {error}</span>
+                </div>
+              )}
+
+              {success && (
+                <div className="card-panel green lighten-5 green-text text-darken-4 font-semibold text-xs" style={{ marginTop: "20px", padding: "12px" }}>
+                  <span>✓ {success}</span>
+                </div>
+              )}
             </div>
           </div>
+        </div>
+      </div>
 
-          {error && <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>}
-
-          {success && (
-            <div className="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded">{success}</div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Uploaded Logs List */}
+      {/* Uploaded Logs List Card */}
       {uploadedLogs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Uploaded Processes</CardTitle>
-            <CardDescription>{uploadedLogs.length} process log(s)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {uploadedLogs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
-                  <div>
-                    <p className="font-semibold">{log.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {log.fileName} • {(log.fileSize / 1024).toFixed(2)} KB • {log.status}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Uploaded {new Date(log.createdAt).toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <Link href={`/process-log/${log.id}`}>
-                      <Button variant="outline" size="sm" disabled={log.status !== "READY"}>
-                        View
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleRename(log)}
-                      disabled={renamingIds.includes(log.id)}
+        <div className="row">
+          <div className="col s12">
+            <div className="card hoverable">
+              <div className="card-content">
+                <span className="card-title font-semibold uppercase text-slate-800" style={{ fontSize: "16px" }}>Uploaded Processes</span>
+                <p className="grey-text text-darken-1 font-light text-xs" style={{ marginBottom: "15px" }}>{uploadedLogs.length} active process event log(s)</p>
+
+                <ul className="collection" style={{ border: "1px solid #e0e0e0" }}>
+                  {uploadedLogs.map((log) => (
+                    <li
+                      key={log.id}
+                      className="collection-item flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 gap-4"
+                      style={{ borderBottom: "1px solid #e0e0e0" }}
                     >
-                      {renamingIds.includes(log.id) ? "Renaming..." : "Rename"}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDelete(log.id)}
-                      disabled={deletingIds.includes(log.id)}
-                    >
-                      {deletingIds.includes(log.id) ? "Deleting..." : "Delete"}
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                      <div className="space-y-1 text-left">
+                        <p className="font-semibold text-slate-850 text-sm" style={{ margin: 0 }}>{log.name}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs grey-text text-darken-1 font-light">
+                          <span>{log.fileName}</span>
+                          <span>•</span>
+                          <span>{(log.fileSize / 1024).toFixed(1)} KB</span>
+                          <span>•</span>
+                          <span 
+                            className={`badge white-text left font-semibold text-xs uppercase`}
+                            style={{
+                              position: "relative",
+                              float: "none",
+                              margin: 0,
+                              padding: "2px 6px",
+                              borderRadius: "2px",
+                              backgroundColor: log.status === "READY" ? "#00897b" : "#fb8c00"
+                            }}
+                          >
+                            {log.status}
+                          </span>
+                        </div>
+                        <p className="grey-text text-lighten-1 font-light" style={{ fontSize: "10px", margin: "2px 0 0 0" }}>
+                          Uploaded {new Date(log.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 items-center self-end sm:self-center">
+                        <Link href={`/process-log/${log.id}`} className={log.status !== "READY" ? "pointer-events-none" : ""}>
+                          <button
+                            disabled={log.status !== "READY"}
+                            className="btn waves-effect waves-light teal darken-1 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:pointer-events-none disabled:shadow-none"
+                            style={{ height: "32px", lineHeight: "32px", fontSize: "11px", display: "inline-flex", alignItems: "center" }}
+                          >
+                            <i className="material-icons left text-sm" style={{ margin: "0 4px 0 0", fontSize: "16px" }}>play_arrow</i>
+                            <span>Explorer</span>
+                          </button>
+                        </Link>
+
+                        <button
+                          onClick={() => handleRename(log)}
+                          disabled={renamingIds.includes(log.id)}
+                          className="btn-flat waves-effect text-slate-700 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                          style={{ height: "32px", lineHeight: "32px", fontSize: "11px", display: "inline-flex", alignItems: "center", border: "1px solid #e0e0e0" }}
+                        >
+                          <i className="material-icons left text-sm" style={{ margin: "0 4px 0 0", fontSize: "16px" }}>edit</i>
+                          <span>{renamingIds.includes(log.id) ? "Renaming..." : "Rename"}</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(log.id)}
+                          disabled={deletingIds.includes(log.id)}
+                          className="btn-flat waves-effect text-red-600 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer hover:bg-red-50"
+                          style={{ height: "32px", lineHeight: "32px", fontSize: "11px", display: "inline-flex", alignItems: "center", border: "1px solid #ffcdd2" }}
+                        >
+                          <i className="material-icons left text-sm text-red-600" style={{ margin: "0 4px 0 0", fontSize: "16px" }}>delete</i>
+                          <span>{deletingIds.includes(log.id) ? "Deleting..." : "Delete"}</span>
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );

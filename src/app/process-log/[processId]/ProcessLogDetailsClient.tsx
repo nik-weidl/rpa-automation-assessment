@@ -2,11 +2,9 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProcessLog, Activity, Assessment } from "@/types/models";
 import ProcessGraph from "@/features/visualization/ProcessGraph";
-import { Loader2, Menu } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { SUPPORTED_MODELS } from "@/features/automation-scoring/openrouter";
 import { calculateLlmCost } from "@/features/automation-scoring/utils";
 
@@ -50,6 +48,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [sidebarWidth, setSidebarWidth] = useState<number>(480);
+  const [isCardCollapsed, setIsCardCollapsed] = useState<boolean>(false);
   const [isResizing, setIsResizing] = useState<boolean>(false);
 
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
@@ -488,41 +487,52 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   };
 
   return (
-    <div className="relative w-full h-[calc(100vh-65px)] flex flex-row overflow-hidden bg-slate-50 select-none">
+    <div className="relative w-full h-[calc(100vh-65px)] flex flex-row overflow-hidden bg-slate-50 select-none font-sans text-slate-800">
       {/* 1. Collapsible Left Sidebar */}
       <div
         style={{ width: `${sidebarWidth}px` }}
-        className={`absolute top-0 left-0 h-full bg-white border-r shadow-2xl z-30 flex flex-col ${
+        className={`absolute top-0 left-0 h-full bg-white border-r border-slate-200 z-depth-1 z-30 flex flex-col ${
           isResizing ? "transition-none" : "transition-transform duration-300 ease-in-out"
         } ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ minWidth: "480px" }}>
           {/* Sidebar Header */}
-          <div className="flex items-center justify-between p-4 border-b bg-slate-50/50 shrink-0">
+          <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
             <div>
-              <h2 className="text-base font-bold text-slate-800 truncate max-w-[340px]" title={processLog.name}>
-                📊 Log: {processLog.name}
-              </h2>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">
+              <span className="text-sm font-semibold uppercase tracking-wider text-slate-800 truncate max-w-[340px] block" title={processLog.name} style={{ fontSize: "14px", fontWeight: "bold" }}>
+                {processLog.name}
+              </span>
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest block mt-0.5">
                 Analytics & Dashboards
               </span>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
               onClick={() => setIsSidebarOpen(false)}
-              className="text-slate-400 hover:text-slate-600 rounded-full h-8 w-8 p-0"
+              className="btn-flat waves-effect hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-all border-0"
+              style={{ width: "32px", height: "32px", padding: 0, minWidth: "32px", display: "inline-flex", borderRadius: "50%" }}
+              title="Close Sidebar"
             >
-              ✕
-            </Button>
+              <i className="material-icons text-slate-700" style={{ fontSize: "20px", lineHeight: "32px" }}>chevron_left</i>
+            </button>
           </div>
 
           {/* Dashboard Selector */}
-          <div className="p-4 border-b bg-slate-50/30 shrink-0">
+          <div className="p-4 border-b border-slate-200 shrink-0">
             <select
               value={selectedDashboard}
               onChange={(e) => setSelectedDashboard(e.target.value)}
-              className="w-full bg-white border border-slate-200 text-slate-700 rounded-md py-1.5 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer shadow-xs"
+              className="browser-default font-medium text-xs text-slate-700 cursor-pointer transition-all"
+              style={{
+                display: "block",
+                width: "100%",
+                height: "36px",
+                padding: "5px",
+                border: "none",
+                borderBottom: "1px solid #9e9e9e",
+                borderRadius: 0,
+                outline: "none",
+                backgroundColor: "transparent"
+              }}
             >
               <option value="frequency">Activity Frequency Analysis</option>
               <option value="paths">Transition Path Analysis</option>
@@ -589,161 +599,202 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           onMouseDown={startResizing}
           onTouchStart={startResizingTouch}
           className={`absolute top-0 right-0 w-1.5 h-full cursor-col-resize z-50 select-none transition-colors ${
-            isResizing ? "bg-blue-600" : "bg-transparent hover:bg-slate-200/60"
+            isResizing ? "bg-teal-600" : "bg-transparent hover:bg-slate-250"
           }`}
         />
       </div>
 
-      {/* 2. Main Graph Area */}
       <div className="flex-1 h-full relative z-10 bg-slate-50">
         {/* Floating Sidebar Toggle Button (Hamburger) */}
         {!isSidebarOpen && (
-          <Button
+          <button
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-4 left-4 z-20 bg-white border hover:bg-slate-50 text-slate-700 shadow-md h-10 w-10 p-0 flex items-center justify-center rounded-lg"
+            className="absolute top-4 left-4 z-20 btn-floating btn-medium waves-effect waves-light teal darken-1 flex items-center justify-center border-0 cursor-pointer"
             title="Open Dashboards"
+            style={{ position: "absolute", top: "16px", left: "16px", width: "40px", height: "40px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
           >
-            <Menu className="w-5 h-5 text-slate-600" />
-          </Button>
-        )}
-
-        {/* Floating Controls Box (Top Right) */}
-        <div className="absolute top-4 right-4 z-10 bg-white/95 backdrop-blur-xs border shadow-md p-4 rounded-xl flex flex-col gap-3.5 w-80 max-h-[calc(100%-32px)] overflow-y-auto text-slate-700">
-          {/* Overlay Selection */}
-          <div className="space-y-1.5">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
-              Graph Overlay
-            </span>
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 gap-1.5">
+            <i className="material-icons">menu</i>
+          </button>
+        )}        {/* Floating Controls Box (Top Right) */}
+        {isCardCollapsed ? (
+          <button
+            onClick={() => setIsCardCollapsed(false)}
+            className="absolute top-4 right-4 z-20 waves-effect hover:bg-slate-100 flex items-center justify-center border border-slate-200 bg-white cursor-pointer shadow-sm"
+            title="Open Graph Controls"
+            style={{ position: "absolute", top: "16px", right: "16px", width: "40px", height: "40px", display: "inline-flex", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: "50%" }}
+          >
+            <i className="material-icons text-slate-700" style={{ fontSize: "20px" }}>settings</i>
+          </button>
+        ) : (
+          <div className="absolute top-4 right-4 z-10 card hoverable" style={{ position: "absolute", top: "16px", right: "16px", zIndex: 10, width: "320px", padding: "20px", maxHeight: "calc(100% - 32px)", overflowY: "auto", margin: 0 }}>
+            {/* Header with minimize button */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+              <span className="text-[10px] uppercase font-bold text-slate-800 tracking-wider">Graph Controls</span>
               <button
-                onClick={() => setColorSource("RULE_BASED")}
-                className={`flex-1 py-1 text-[10px] font-extrabold rounded transition-colors ${
-                  colorSource === "RULE_BASED"
-                    ? "bg-slate-800 text-white shadow-xs"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
+                onClick={() => setIsCardCollapsed(true)}
+                className="btn-flat waves-effect hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-all border-0"
+                style={{ width: "24px", height: "24px", padding: 0, minWidth: "24px", display: "inline-flex", borderRadius: "50%" }}
+                title="Minimize Controls"
               >
-                Rule-Based
-              </button>
-              <button
-                onClick={() => setColorSource("LLM")}
-                className={`flex-1 py-1 text-[10px] font-extrabold rounded transition-colors ${
-                  colorSource === "LLM"
-                    ? "bg-slate-800 text-white shadow-xs"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                LLM Overlay
+                <i className="material-icons text-slate-500" style={{ fontSize: "16px", lineHeight: "24px" }}>close</i>
               </button>
             </div>
-            {colorSource === "LLM" && (
-              <select
-                value={graphModel}
-                onChange={(e) => setGraphModel(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-700 rounded px-2.5 py-1 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 mt-1 cursor-pointer"
-              >
-                {SUPPORTED_MODELS.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
 
-          <hr className="border-slate-100" />
-
-          {/* Detail Node Limit Slider */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              <span>Node Density</span>
-              <span className="text-blue-600 font-extrabold normal-case font-mono">{nodeLimit} nodes</span>
-            </div>
-            <div className="flex items-center gap-2 bg-slate-50 border p-2 rounded-lg">
-              <input
-                type="range"
-                min="10"
-                max="100"
-                step="10"
-                value={nodeLimit}
-                onChange={(e) => setNodeLimit(parseInt(e.target.value, 10))}
-                className="flex-1 cursor-pointer accent-blue-600 h-1.5 bg-slate-200 rounded-lg appearance-none"
-              />
-            </div>
-          </div>
-
-          <hr className="border-slate-100" />
-
-          {/* Batch Evaluation Control Box */}
-          <div className="space-y-2">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
-              Batch LLM Evaluator
-            </span>
-            <div className="bg-slate-50 border p-3 rounded-lg space-y-2.5">
-              {/* scope select */}
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
-                <span className="text-slate-400 text-[10px]">Scope:</span>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="batchScope"
-                      value="all"
-                      checked={batchScope === "all"}
-                      onChange={() => setBatchScope("all")}
-                      disabled={batchEvaluating}
-                      className="w-3 h-3 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    All ({processLog.activities.length})
-                  </label>
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="batchScope"
-                      value="visible"
-                      checked={batchScope === "visible"}
-                      onChange={() => setBatchScope("visible")}
-                      disabled={batchEvaluating}
-                      className="w-3 h-3 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    />
-                    Visible ({Math.min(nodeLimit, processLog.activities.length)})
-                  </label>
-                </div>
+            {/* Overlay Selection */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                Graph Overlay
+              </span>
+              <div className="flex bg-slate-100 p-0.5 rounded-sm border border-slate-200 gap-1.5" style={{ padding: "2px" }}>
+                <button
+                  onClick={() => setColorSource("RULE_BASED")}
+                  className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded-sm transition-all cursor-pointer border-0 ${
+                    colorSource === "RULE_BASED"
+                      ? "teal white-text z-depth-1"
+                      : "bg-transparent text-slate-500"
+                  }`}
+                >
+                  Rule-Based
+                </button>
+                <button
+                  onClick={() => setColorSource("LLM")}
+                  className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded-sm transition-all cursor-pointer border-0 ${
+                    colorSource === "LLM"
+                      ? "teal white-text z-depth-1"
+                      : "bg-transparent text-slate-500"
+                  }`}
+                >
+                  LLM Overlay
+                </button>
               </div>
+              {colorSource === "LLM" && (
+                <select
+                  value={graphModel}
+                  onChange={(e) => setGraphModel(e.target.value)}
+                  className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "30px",
+                    padding: "2px",
+                    border: "none",
+                    borderBottom: "1px solid #9e9e9e",
+                    backgroundColor: "transparent",
+                    marginTop: "5px"
+                  }}
+                >
+                  {SUPPORTED_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
 
-              {/* model select */}
-              <select
-                disabled={batchEvaluating}
-                value={batchModel}
-                onChange={(e) => setBatchModel(e.target.value)}
-                className="w-full bg-white border border-slate-200 text-slate-700 rounded py-1 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer"
-              >
-                {SUPPORTED_MODELS.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
+            <hr className="border-slate-100" style={{ margin: "10px 0" }} />
 
-              {/* run button */}
-              <Button
-                disabled={batchEvaluating}
-                onClick={handleRunBatchLlmEvaluation}
-                size="sm"
-                className="w-full bg-slate-800 hover:bg-slate-900 text-xs font-semibold text-white h-8 shadow-sm flex items-center justify-center gap-1.5"
-              >
-                {batchEvaluating ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})...
-                  </>
-                ) : (
-                  "Evaluate Batch"
-                )}
-              </Button>
+            {/* Detail Node Limit Slider */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                <span>Node Density</span>
+                <span className="teal-text text-darken-1 font-bold normal-case font-mono">{nodeLimit} nodes</span>
+              </div>
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-sm" style={{ padding: "8px" }}>
+                <input
+                  type="range"
+                  min="10"
+                  max="100"
+                  step="10"
+                  value={nodeLimit}
+                  onChange={(e) => setNodeLimit(parseInt(e.target.value, 10))}
+                  className="flex-1 cursor-pointer accent-teal-600 h-1 bg-slate-200 rounded-lg appearance-none"
+                />
+              </div>
+            </div>
+
+            <hr className="border-slate-100" style={{ margin: "10px 0" }} />
+
+            {/* Batch Evaluation Control Box */}
+            <div className="space-y-2">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                Batch LLM Evaluator
+              </span>
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm space-y-2.5 mt-2" style={{ padding: "12px", border: "1px solid #e0e0e0", backgroundColor: "#fafafa" }}>
+                {/* scope select */}
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-650">
+                  <span className="text-slate-400 text-[10px]">Scope:</span>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="batchScope"
+                        value="all"
+                        checked={batchScope === "all"}
+                        onChange={() => setBatchScope("all")}
+                        disabled={batchEvaluating}
+                        className="accent-teal-600 cursor-pointer"
+                      />
+                      <span>All ({processLog.activities.length})</span>
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="batchScope"
+                        value="visible"
+                        checked={batchScope === "visible"}
+                        onChange={() => setBatchScope("visible")}
+                        disabled={batchEvaluating}
+                        className="accent-teal-600 cursor-pointer"
+                      />
+                      <span>Visible ({Math.min(nodeLimit, processLog.activities.length)})</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* model select */}
+                <select
+                  disabled={batchEvaluating}
+                  value={batchModel}
+                  onChange={(e) => setBatchModel(e.target.value)}
+                  className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "30px",
+                    padding: "2px",
+                    border: "none",
+                    borderBottom: "1px solid #9e9e9e",
+                    backgroundColor: "transparent"
+                  }}
+                >
+                  {SUPPORTED_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* run button */}
+                <button
+                  disabled={batchEvaluating}
+                  onClick={handleRunBatchLlmEvaluation}
+                  className="btn waves-effect waves-light teal darken-1 w-full text-xs font-semibold uppercase tracking-wider"
+                  style={{ height: "32px", lineHeight: "32px", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%" }}
+                >
+                  {batchEvaluating ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                      Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})...
+                    </>
+                  ) : (
+                    "Evaluate Batch"
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Process Transition Map Canvas */}
         <ProcessGraph
@@ -762,19 +813,19 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
 
       {/* 3. popup overlay modal for activity details */}
       {selectedActivity && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 select-text">
-          {/* backdrop layer */}
-          <div
-            onClick={() => setSelectedActivity(null)}
-            className="absolute inset-0 bg-slate-900/25 transition-opacity duration-300"
-          />
-
+        <div
+          onClick={() => setSelectedActivity(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/45 backdrop-blur-[1px] select-text"
+        >
           {/* modal container */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative bg-white rounded-sm z-depth-4 w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-200"
+          >
             {/* close button */}
             <button
               onClick={() => setSelectedActivity(null)}
-              className="absolute top-4 right-4 h-9 w-9 flex items-center justify-center text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full shadow-xs transition-all z-20 font-black text-sm"
+              className="absolute top-4 right-4 h-9 w-9 flex items-center justify-center text-slate-500 hover:text-slate-800 bg-transparent hover:bg-slate-100 rounded-full transition-all z-20 font-black text-sm cursor-pointer"
               title="Close Panel"
             >
               ✕
