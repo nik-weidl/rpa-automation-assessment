@@ -7,9 +7,12 @@ services:
     command: npm run dev
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://rpa_user:rpa_password@db:5432/rpa_assessment?schema=public
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - NODE_ENV=development
     depends_on:
       db:

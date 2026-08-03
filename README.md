@@ -29,10 +29,21 @@ The tool will provide the following functionality:
 
 ## Quickstart
 
-To get started, ensure you have Docker installed and run the following command:
+1. **Create `.env` File**:
+   Create a `.env` file in the project root with the following content and insert your OpenRouter API key:
 
-```bash
-docker compose up --build
-```
+   ```env
+   DATABASE_URL="postgresql://rpa_user:rpa_password@localhost:5432/rpa_assessment?schema=public"
+   NEXT_PUBLIC_APP_URL="http://localhost:3000"
 
-The application will be accessible at `http://localhost:3000`. You can upload your XES event logs and start analyzing the automation potential of process activities.
+   OPENROUTER_API_KEY="your_openrouter_api_key_here"
+   ```
+
+2. **Start Application**:
+   Ensure Docker is running, then execute:
+
+   ```bash
+   docker compose up --build
+   ```
+
+The application will be accessible at `http://localhost:3000`. Database migrations run automatically on startup.

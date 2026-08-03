@@ -32,6 +32,7 @@ export default function RootLayout({
     >
       <head>
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet" />
       </head>
       <body className="min-h-full flex flex-col">
         <Navigation />
