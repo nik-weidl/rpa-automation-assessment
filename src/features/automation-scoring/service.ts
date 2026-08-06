@@ -152,6 +152,23 @@ function cleanAndParseJson(content: string): any {
   }
 }
 
+export const SINGLE_SHOT_JSON_SCHEMA = {
+  name: "rpa_single_shot_assessment",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      score: { type: "number" },
+      label: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
+      reasoning: { type: "string" },
+      risks: { type: "array", items: { type: "string" } },
+      missingInfo: { type: "array", items: { type: "string" } },
+    },
+    required: ["score", "label", "reasoning", "risks", "missingInfo"],
+    additionalProperties: false,
+  },
+};
+
 /**
  * evaluates a process activity's automation potential using single-shot LLM prompts
  */
@@ -209,7 +226,10 @@ You must output a strict JSON object with this format, containing no other text:
     model,
     systemPrompt,
     userPrompt,
-    { type: "json_object" }
+    {
+      type: "json_schema",
+      json_schema: SINGLE_SHOT_JSON_SCHEMA,
+    }
   );
 
   const parsedResponse = cleanAndParseJson(llmResult.content);

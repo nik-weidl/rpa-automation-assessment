@@ -19,6 +19,17 @@ export interface OpenRouterResponse {
   model: string;
 }
 
+export type ResponseFormatOption =
+  | { type: "json_object" }
+  | {
+      type: "json_schema";
+      json_schema: {
+        name: string;
+        strict: boolean;
+        schema: Record<string, any>;
+      };
+    };
+
 /**
  * calls OpenRouter API to fetch completion results with cost and latency tracking
  */
@@ -26,7 +37,7 @@ export async function callOpenRouter(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  responseFormat?: { type: "json_object" }
+  responseFormat?: ResponseFormatOption
 ): Promise<OpenRouterResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
