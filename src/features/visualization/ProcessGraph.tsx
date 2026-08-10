@@ -293,7 +293,7 @@ export default function ProcessGraph({
     const padding = 80;
     const fitScaleX = (width - padding * 2) / graphW;
     const fitScaleY = (height - padding * 2) / graphH;
-    const fitScale = Math.min(1.0, Math.max(0.15, Math.min(fitScaleX, fitScaleY)));
+    const fitScale = Math.min(1.0, Math.max(0.01, Math.min(fitScaleX, fitScaleY)));
 
     const nextOffsetX = (width - graphW * fitScale) / 2 - minX * fitScale;
     const nextOffsetY = (height - graphH * fitScale) / 2 - minY * fitScale;
@@ -436,7 +436,7 @@ export default function ProcessGraph({
     ctx.closePath();
     ctx.fill();
 
-    if (showLabels && edge.label) {
+    if (showLabels && edge.label && zoom >= 0.40) {
       const midX = (fromX + toX) / 2;
       const midY = (fromY + toY) / 2;
       const text = edge.label;
@@ -547,6 +547,7 @@ export default function ProcessGraph({
       ctx.fill();
       ctx.stroke();
 
+      const isMicroLOD = zoom < 0.20;
       const isLOD = zoom < 0.45;
 
       if (!isLOD && node.data.automationScore !== undefined && node.data.automationScore !== null) {
@@ -571,13 +572,13 @@ export default function ProcessGraph({
       }
 
       ctx.fillStyle = titleColor;
-      ctx.font = isLOD ? `bold 24px ${FONT_SANS}` : `bold 18px ${FONT_SANS}`;
+      ctx.font = isMicroLOD ? `bold 32px ${FONT_SANS}` : isLOD ? `bold 24px ${FONT_SANS}` : `bold 18px ${FONT_SANS}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
       const txtX = x + w / 2;
       const txtY = isLOD ? y + h / 2 : y + h / 2 - 14;
-      wrapText(ctx, node.data.name, txtX, txtY, w - 30, isLOD ? 28 : 22, isLOD ? 3 : 2);
+      wrapText(ctx, node.data.name, txtX, txtY, w - 30, isMicroLOD ? 36 : isLOD ? 28 : 22, isMicroLOD ? 2 : isLOD ? 3 : 2);
 
       if (!isLOD) {
         ctx.strokeStyle = "#e2e8f0";
@@ -615,43 +616,77 @@ export default function ProcessGraph({
     }
   };
 
-  // canvas paint effect loop
+  // canvas paint effect loop with Viewport Culling & rAF scheduling
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    let animId: number;
 
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth || dimensions.width || 800;
-    const height = canvas.clientHeight || dimensions.height || 600;
-    
-    // set actual screen pixel dimensions for high-DPI
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    const render = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    ctx.clearRect(0, 0, width, height);
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth || dimensions.width || 800;
+      const height = canvas.clientHeight || dimensions.height || 600;
+      
+      // set actual screen pixel dimensions for high-DPI
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
 
-    ctx.save();
-    ctx.scale(dpr, dpr);
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(zoom, zoom);
+      ctx.clearRect(0, 0, width, height);
 
-    drawGrid(ctx, width, height);
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(zoom, zoom);
 
-    edges.forEach((edge) => {
-      const srcNode = nodes.find((n) => n.id === edge.source);
-      const tgtNode = nodes.find((n) => n.id === edge.target);
-      drawEdge(ctx, edge, srcNode, tgtNode);
-    });
+      drawGrid(ctx, width, height);
 
-    nodes.forEach((node) => {
-      const isHovered = hoveredNodeId === node.id;
-      const isSelected = selectedNodeId === node.id;
-      drawNode(ctx, node, isHovered, isSelected);
-    });
+      // Viewport Culling (off-screen clipping) bounds
+      const margin = 60;
+      const visibleMinX = -offsetX / zoom - margin;
+      const visibleMinY = -offsetY / zoom - margin;
+      const visibleMaxX = (width - offsetX) / zoom + margin;
+      const visibleMaxY = (height - offsetY) / zoom + margin;
 
-    ctx.restore();
+      const visibleNodeIds = new Set<string>();
+
+      nodes.forEach((node) => {
+        const w = node.type === "activity" ? 336 : 144;
+        const h = 144;
+        const isVisible =
+          node.position.x + w >= visibleMinX &&
+          node.position.x <= visibleMaxX &&
+          node.position.y + h >= visibleMinY &&
+          node.position.y <= visibleMaxY;
+
+        if (isVisible) {
+          visibleNodeIds.add(node.id);
+        }
+      });
+
+      edges.forEach((edge) => {
+        if (visibleNodeIds.has(edge.source) || visibleNodeIds.has(edge.target)) {
+          const srcNode = nodes.find((n) => n.id === edge.source);
+          const tgtNode = nodes.find((n) => n.id === edge.target);
+          drawEdge(ctx, edge, srcNode, tgtNode);
+        }
+      });
+
+      nodes.forEach((node) => {
+        if (visibleNodeIds.has(node.id)) {
+          const isHovered = hoveredNodeId === node.id;
+          const isSelected = selectedNodeId === node.id;
+          drawNode(ctx, node, isHovered, isSelected);
+        }
+      });
+
+      ctx.restore();
+    };
+
+    animId = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(animId);
   }, [nodes, edges, zoom, offsetX, offsetY, dimensions, hoveredNodeId, selectedNodeId, showLabels]);
 
   // pointer position detection helper
@@ -760,7 +795,7 @@ export default function ProcessGraph({
       const graphY = (mouseY - offsetY) / zoom;
 
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const nextZoom = Math.min(4, Math.max(0.1, zoom * factor));
+      const nextZoom = Math.min(4, Math.max(0.01, zoom * factor));
 
       const nextOffsetX = mouseX - graphX * nextZoom;
       const nextOffsetY = mouseY - graphY * nextZoom;
@@ -778,7 +813,7 @@ export default function ProcessGraph({
     setZoom((z) => Math.min(4, z * 1.2));
   };
   const zoomOut = () => {
-    setZoom((z) => Math.max(0.1, z / 1.2));
+    setZoom((z) => Math.max(0.01, z / 1.2));
   };
 
   const toggleDirection = () => {
