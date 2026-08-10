@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ProcessLog, Activity, Assessment } from "@/types/models";
 import ProcessGraph from "@/features/visualization/ProcessGraph";
@@ -54,6 +54,8 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [sidebarWidth, setSidebarWidth] = useState<number>(480);
   const [isCardCollapsed, setIsCardCollapsed] = useState<boolean>(false);
   const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [isGraphCalculating, setIsGraphCalculating] = useState<boolean>(false);
+  const cancelGraphRef = useRef<(() => void) | null>(null);
 
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
@@ -623,14 +625,14 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         {isCardCollapsed ? (
           <button
             onClick={() => setIsCardCollapsed(false)}
-            className="absolute top-4 right-4 z-20 waves-effect hover:bg-slate-100 flex items-center justify-center border border-slate-200 bg-white cursor-pointer shadow-sm"
+            className="absolute top-4 right-4 z-40 waves-effect hover:bg-slate-100 flex items-center justify-center border border-slate-200 bg-white cursor-pointer shadow-sm"
             title="Open Graph Controls"
-            style={{ position: "absolute", top: "16px", right: "16px", width: "40px", height: "40px", display: "inline-flex", alignItems: "center", justifyContent: "center", zIndex: 10, borderRadius: "50%" }}
+            style={{ position: "absolute", top: "16px", right: "16px", width: "40px", height: "40px", display: "inline-flex", alignItems: "center", justifyContent: "center", zIndex: 40, borderRadius: "50%" }}
           >
             <i className="material-icons text-slate-700" style={{ fontSize: "20px" }}>settings</i>
           </button>
         ) : (
-          <div className="absolute top-4 right-4 z-10 card hoverable" style={{ position: "absolute", top: "16px", right: "16px", zIndex: 10, width: "320px", padding: "20px", maxHeight: "calc(100% - 32px)", overflowY: "auto", margin: 0 }}>
+          <div className="absolute top-4 right-4 z-40 card hoverable" style={{ position: "absolute", top: "16px", right: "16px", zIndex: 40, width: "320px", padding: "20px", maxHeight: "calc(100% - 32px)", overflowY: "auto", margin: 0 }}>
             {/* Header with minimize button */}
             <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
               <span className="text-[10px] uppercase font-bold text-slate-800 tracking-wider">Graph Controls</span>
@@ -699,25 +701,58 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
             <hr className="border-slate-100" style={{ margin: "10px 0" }} />
 
             {/* Detail Node Limit Slider */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                <span>Node Density</span>
-                <span className="teal-text text-darken-1 font-bold normal-case font-mono">{sliderDensity} nodes</span>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-2 rounded-sm" style={{ padding: "8px" }}>
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  step="10"
-                  value={sliderDensity}
-                  onChange={(e) => setSliderDensity(parseInt(e.target.value, 10))}
-                  onMouseUp={() => setNodeLimit(sliderDensity)}
-                  onTouchEnd={() => setNodeLimit(sliderDensity)}
-                  className="flex-1 cursor-pointer accent-teal-600 h-1 bg-slate-200 rounded-lg appearance-none"
-                />
-              </div>
-            </div>
+            {(() => {
+              const maxTotalActivities = Math.max(1, processLog.activities.length);
+              return (
+                <div className="space-y-2.5">
+                  <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded border border-slate-200">
+                    <div className="flex flex-col">
+                      <span className="text-xs uppercase font-extrabold text-slate-500 tracking-wider">Node Density</span>
+                      <span className="text-[10px] text-slate-400 font-semibold font-mono">({nodeLimit} active on canvas)</span>
+                    </div>
+                    <div className="flex items-baseline gap-1 bg-white px-3 py-1 rounded border border-slate-300 shadow-2xs">
+                      <span className="text-lg font-black text-teal-700 font-mono">{sliderDensity}</span>
+                      <span className="text-xs font-bold text-slate-500">/ {maxTotalActivities}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center bg-slate-50 border border-slate-200 p-2 rounded-sm" style={{ padding: "8px" }}>
+                    <input
+                      type="range"
+                      min="1"
+                      max={maxTotalActivities}
+                      step="1"
+                      value={Math.min(sliderDensity, maxTotalActivities)}
+                      onChange={(e) => setSliderDensity(Number(e.target.value))}
+                      onInput={(e) => setSliderDensity(Number((e.target as HTMLInputElement).value))}
+                      className="w-full cursor-pointer accent-teal-600 h-2 bg-slate-200 rounded-lg border-0"
+                      style={{ display: "block", width: "100%", opacity: 1, pointerEvents: "auto" }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isGraphCalculating) {
+                        cancelGraphRef.current?.();
+                      } else {
+                        setNodeLimit(sliderDensity);
+                      }
+                    }}
+                    className={`w-full py-2 px-3 rounded text-[11px] uppercase font-extrabold tracking-wider cursor-pointer border-0 flex items-center justify-center gap-1.5 shadow-xs transition-all ${
+                      isGraphCalculating
+                        ? "bg-rose-600 text-white hover:bg-rose-700"
+                        : "bg-teal-600 text-white hover:bg-teal-700"
+                    }`}
+                  >
+                    <i className="material-icons text-sm" style={{ fontSize: "16px" }}>
+                      {isGraphCalculating ? "cancel" : "play_arrow"}
+                    </i>
+                    <span>{isGraphCalculating ? "Cancel Calculation" : "Apply & Recalculate"}</span>
+                  </button>
+                </div>
+              );
+            })()}
 
             <hr className="border-slate-100" style={{ margin: "10px 0" }} />
 
@@ -814,6 +849,10 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           isSidebarOpen={isSidebarOpen}
           sidebarWidth={sidebarWidth}
           isResizing={isResizing}
+          onLoadingChange={setIsGraphCalculating}
+          onRegisterCancel={(cancelFn) => {
+            cancelGraphRef.current = cancelFn;
+          }}
         />
       </div>
 

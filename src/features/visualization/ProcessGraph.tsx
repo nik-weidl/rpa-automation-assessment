@@ -43,11 +43,18 @@ interface CanvasEdge {
 
 // ─── dagre auto-layout helper ───────────────────────────────────────────────
 
-const getLayoutedElements = (
+const getLayoutedElementsAsync = async (
   nodes: CanvasNode[],
   edges: CanvasEdge[],
-  direction = "TB"
-): { nodes: CanvasNode[]; edges: CanvasEdge[] } => {
+  direction = "TB",
+  signal?: AbortSignal
+): Promise<{ nodes: CanvasNode[]; edges: CanvasEdge[] }> => {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+  // Yield execution back to browser main thread to process UI clicks and paint loading state
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: direction,
@@ -68,7 +75,11 @@ const getLayoutedElements = (
     g.setEdge(edge.source, edge.target);
   });
 
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
   dagre.layout(g);
+
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
   return {
     nodes: nodes.map((node) => {
@@ -101,6 +112,8 @@ interface ProcessGraphProps {
   isSidebarOpen?: boolean;
   sidebarWidth?: number;
   isResizing?: boolean;
+  onLoadingChange?: (isLoading: boolean) => void;
+  onRegisterCancel?: (cancelFn: () => void) => void;
 }
 
 export default function ProcessGraph({
@@ -114,6 +127,8 @@ export default function ProcessGraph({
   isSidebarOpen = false,
   sidebarWidth = 480,
   isResizing = false,
+  onLoadingChange,
+  onRegisterCancel,
 }: ProcessGraphProps) {
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -142,6 +157,7 @@ export default function ProcessGraph({
   const dragDistanceRef = useRef<number>(0);
   const layoutCacheRef = useRef<Record<string, Record<string, { x: number; y: number }>>>({});
   const lastLayoutKeyRef = useRef<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const nodeLimit = propNodeLimit !== undefined ? propNodeLimit : localNodeLimit;
   const setNodeLimit = (val: number) => {
@@ -150,6 +166,23 @@ export default function ProcessGraph({
       onNodeLimitChange(val);
     }
   };
+
+  // sync loading state with parent callback
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
+
+  const cancelCalculation = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    onRegisterCancel?.(cancelCalculation);
+  }, [cancelCalculation, onRegisterCancel]);
 
   // track container size changes
   useEffect(() => {
@@ -179,13 +212,20 @@ export default function ProcessGraph({
   }, [nodeLimit]);
 
   const fetchGraph = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
       const modelParam = model ? `&model=${encodeURIComponent(model)}` : "";
       const triggerParam = reloadTrigger ? `&t=${reloadTrigger}` : "";
       const response = await fetch(
-        `/api/process-logs/${processLogId}/transition-graph?nodeLimit=${nodeLimit}&assessmentType=${assessmentType}${modelParam}${triggerParam}`
+        `/api/process-logs/${processLogId}/transition-graph?nodeLimit=${nodeLimit}&assessmentType=${assessmentType}${modelParam}${triggerParam}`,
+        { signal: controller.signal }
       );
       const result = await response.json();
 
@@ -242,10 +282,11 @@ export default function ProcessGraph({
          }));
          layoutedEdges = rawEdges;
       } else {
-        const layoutResult = getLayoutedElements(
+        const layoutResult = await getLayoutedElementsAsync(
           rawNodes,
           rawEdges,
-          direction
+          direction,
+          controller.signal
         );
         layoutedNodes = layoutResult.nodes;
         layoutedEdges = layoutResult.edges;
@@ -260,10 +301,16 @@ export default function ProcessGraph({
 
       setNodes(layoutedNodes);
       setEdges(layoutedEdges);
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        return; // cleanly aborted by user
+      }
       setError(err instanceof Error ? err.message : "Failed to load process flow");
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+        abortControllerRef.current = null;
+      }
     }
   }, [processLogId, direction, nodeLimit, showLabels, assessmentType, model, reloadTrigger]);
 
@@ -843,7 +890,7 @@ export default function ProcessGraph({
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-white select-none">
       {loading && (
-        <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-20 flex items-center justify-center transition-all">
+        <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-20 pointer-events-none flex items-center justify-center transition-all">
           <p className="text-slate-600 font-semibold animate-pulse">Recalculating layout...</p>
         </div>
       )}
