@@ -48,8 +48,8 @@ export default function UploadPage() {
       return;
     }
 
-    if (file.size > 100 * 1024 * 1024) {
-      setError("File too large (max 100MB)");
+    if (file.size > 500 * 1024 * 1024) {
+      setError("File too large (max 500MB)");
       return;
     }
 
@@ -229,7 +229,7 @@ export default function UploadPage() {
                 </div>
 
                 <p className="font-semibold uppercase tracking-wider text-slate-850 text-xs" style={{ margin: "5px 0" }}>Drop XES log file here</p>
-                <p className="grey-text text-darken-1 font-light text-xs" style={{ margin: 0 }}>or click to browse local files (max 100MB)</p>
+                <p className="grey-text text-darken-1 font-light text-xs" style={{ margin: 0 }}>or click to browse local files (max 500MB)</p>
 
                 {isUploading && (
                   <div 

@@ -4,6 +4,7 @@ import { ApiResponse } from "@/types/api";
 import { ProcessLog } from "@/types/models";
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 600; // 10 minute execution limit for large event log processing
 
 /**
  * Handles POST requests for uploading XES files

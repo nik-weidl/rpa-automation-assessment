@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 export const XES_FILE_VALIDATION = {
-  MAX_SIZE: 100 * 1024 * 1024, // 100MB
+  MAX_SIZE: 500 * 1024 * 1024, // 500MB
   ALLOWED_TYPES: ["application/xml", "text/xml"],
   ALLOWED_EXTENSIONS: [".xes"],
 };
 
 export const UploadFileSchema = z.object({
   filename: z.string().endsWith(".xes", { message: "Must be .xes file" }),
-  size: z.number().max(XES_FILE_VALIDATION.MAX_SIZE, { message: "File too large (max 100MB)" }),
+  size: z.number().max(XES_FILE_VALIDATION.MAX_SIZE, { message: "File too large (max 500MB)" }),
   mimetype: z.string(),
 });
 
