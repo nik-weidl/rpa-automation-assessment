@@ -6,6 +6,7 @@ interface FeasibilityMatrixProps {
   activities: Activity[];
   assessments: Assessment[];
   onSelectAndCompare: (activityName: string, activeAssessmentsCount: number) => void;
+  onFocusNode?: (activity: Activity) => void;
   formatCost: (costUsd: number | null | undefined, modelId: string | null | undefined) => string;
   activeConfirmedNodeLimit?: number;
   isExpanded?: boolean;
@@ -15,6 +16,7 @@ export default function FeasibilityMatrix({
   activities,
   assessments,
   onSelectAndCompare,
+  onFocusNode,
   formatCost,
   activeConfirmedNodeLimit = 20,
   isExpanded = false,
@@ -157,8 +159,12 @@ export default function FeasibilityMatrix({
               };
 
               return (
-                <tr key={act.id} className="hover:bg-slate-50/50 transition-colors border-b border-slate-100">
-                  <td className="py-3 px-4 font-semibold text-slate-800 max-w-[200px] truncate" title={act.name}>
+                <tr 
+                  key={act.id} 
+                  onClick={() => onFocusNode?.(act)}
+                  className="hover:bg-slate-100/70 cursor-pointer transition-colors border-b border-slate-100 group"
+                >
+                  <td className="py-3 px-4 font-semibold text-slate-800 group-hover:text-teal-700 max-w-[200px] truncate transition-colors" title={act.name}>
                     {act.name}
                   </td>
                   <td className="py-3 px-4 text-center font-semibold text-slate-600">
@@ -216,7 +222,11 @@ export default function FeasibilityMatrix({
                   {/* actions */}
                   <td className="py-3 px-4 text-center">
                     <button
-                      onClick={() => onSelectAndCompare(act.name, activeScores.length)}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectAndCompare(act.name, activeScores.length);
+                      }}
                       className="btn-small waves-effect waves-light teal darken-1 border-0 cursor-pointer text-[10px] font-semibold uppercase tracking-wider"
                       style={{ height: "26px", lineHeight: "26px", fontSize: "10px", padding: "0 10px" }}
                     >

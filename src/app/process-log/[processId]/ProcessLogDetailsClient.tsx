@@ -52,6 +52,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     setSliderDensity(20);
   }, [processLog.id]);
   const [batchScope, setBatchScope] = useState<"all" | "visible">("visible");
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [sidebarWidth, setSidebarWidth] = useState<number>(480);
@@ -59,6 +60,17 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [isGraphCalculating, setIsGraphCalculating] = useState<boolean>(false);
   const cancelGraphRef = useRef<(() => void) | null>(null);
+
+  const handleFocusNodeOnMap = (activity: Activity) => {
+    const sorted = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
+    const actIndex = sorted.findIndex((a) => a.id === activity.id);
+    if (actIndex >= 0 && actIndex >= activeConfirmedNodeLimit) {
+      const requiredLimit = actIndex + 1;
+      setNodeLimit(requiredLimit);
+      setSliderDensity(requiredLimit);
+    }
+    setFocusedNodeId(activity.name);
+  };
 
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
@@ -597,6 +609,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 assessments={processLog.assessments}
                 onSelectAndCompare={handleSelectAndCompare}
                 activeConfirmedNodeLimit={activeConfirmedNodeLimit}
+                onFocusNode={handleFocusNodeOnMap}
                 formatCost={formatCost}
                 isExpanded={sidebarWidth >= 800}
               />
@@ -880,6 +893,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           onLayoutSuccess={(confirmedLimit) => {
             setActiveConfirmedNodeLimit(confirmedLimit);
           }}
+          focusedNodeId={focusedNodeId}
         />
       </div>
 

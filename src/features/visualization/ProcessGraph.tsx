@@ -299,6 +299,7 @@ interface ProcessGraphProps {
   onLoadingChange?: (isLoading: boolean) => void;
   onRegisterCancel?: (cancelFn: () => void) => void;
   onLayoutSuccess?: (limit: number) => void;
+  focusedNodeId?: string | null;
 }
 
 export default function ProcessGraph({
@@ -315,6 +316,7 @@ export default function ProcessGraph({
   onLoadingChange,
   onRegisterCancel,
   onLayoutSuccess,
+  focusedNodeId,
 }: ProcessGraphProps) {
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -545,6 +547,47 @@ export default function ProcessGraph({
       fitView();
     }
   }, [nodes, processLogId, nodeLimit, direction, fitView]);
+
+  // Center and zoom in on a specific node when focused
+  const centerAndZoomOnNode = useCallback(
+    (targetIdOrName: string) => {
+      if (nodes.length === 0) return;
+      const targetNode = nodes.find(
+        (n) =>
+          n.id === targetIdOrName ||
+          n.data?.name === targetIdOrName ||
+          (n.id && n.id.toLowerCase() === targetIdOrName.toLowerCase()) ||
+          (n.data?.name && n.data.name.toLowerCase() === targetIdOrName.toLowerCase())
+      );
+      if (!targetNode) return;
+
+      const canvas = canvasRef.current;
+      const width = canvas?.clientWidth || dimensions.width || 800;
+      const height = canvas?.clientHeight || dimensions.height || 600;
+
+      const nodeW = targetNode.type === "start" || targetNode.type === "end" ? 144 : 336;
+      const nodeH = 144;
+
+      const centerX = targetNode.position.x + nodeW / 2;
+      const centerY = targetNode.position.y + nodeH / 2;
+
+      const targetZoom = 0.65;
+      const nextOffsetX = width / 2 - centerX * targetZoom;
+      const nextOffsetY = height / 2 - centerY * targetZoom;
+
+      setZoom(targetZoom);
+      setOffsetX(nextOffsetX);
+      setOffsetY(nextOffsetY);
+      setSelectedNodeId(targetNode.id);
+    },
+    [nodes, dimensions]
+  );
+
+  useEffect(() => {
+    if (focusedNodeId) {
+      centerAndZoomOnNode(focusedNodeId);
+    }
+  }, [focusedNodeId, centerAndZoomOnNode]);
 
   // helper formatting routines
   const formatDuration = (ms: number) => {
