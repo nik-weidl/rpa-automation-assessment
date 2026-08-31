@@ -51,7 +51,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     setNodeLimit(20);
     setSliderDensity(20);
   }, [processLog.id]);
-  const [batchScope, setBatchScope] = useState<"all" | "visible">("all");
+  const [batchScope, setBatchScope] = useState<"all" | "visible">("visible");
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [sidebarWidth, setSidebarWidth] = useState<number>(480);
@@ -596,6 +596,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 activities={processLog.activities}
                 assessments={processLog.assessments}
                 onSelectAndCompare={handleSelectAndCompare}
+                activeConfirmedNodeLimit={activeConfirmedNodeLimit}
                 formatCost={formatCost}
                 isExpanded={sidebarWidth >= 800}
               />

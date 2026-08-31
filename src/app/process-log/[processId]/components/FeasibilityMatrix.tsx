@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { Activity, Assessment } from "@/types/models";
 import { SUPPORTED_MODELS } from "@/features/automation-scoring/openrouter";
 
@@ -6,6 +7,7 @@ interface FeasibilityMatrixProps {
   assessments: Assessment[];
   onSelectAndCompare: (activityName: string, activeAssessmentsCount: number) => void;
   formatCost: (costUsd: number | null | undefined, modelId: string | null | undefined) => string;
+  activeConfirmedNodeLimit?: number;
   isExpanded?: boolean;
 }
 
@@ -14,8 +16,19 @@ export default function FeasibilityMatrix({
   assessments,
   onSelectAndCompare,
   formatCost,
+  activeConfirmedNodeLimit = 20,
   isExpanded = false,
 }: FeasibilityMatrixProps) {
+  const [matrixScope, setMatrixScope] = useState<"all" | "visible">("visible");
+
+  const displayedActivities = useMemo(() => {
+    if (matrixScope === "visible") {
+      const sorted = [...activities].sort((a, b) => b.frequency - a.frequency);
+      return sorted.slice(0, Math.min(activeConfirmedNodeLimit, sorted.length));
+    }
+    return activities;
+  }, [activities, matrixScope, activeConfirmedNodeLimit]);
+
   const totalLlmCostUsd = assessments
     ? assessments
         .filter((a) => a.type === "LLM_SINGLE_SHOT" && a.costUsd !== null && a.costUsd !== undefined)
@@ -25,18 +38,64 @@ export default function FeasibilityMatrix({
   return (
     <div className="space-y-6 font-sans">
       <div className="card bg-white z-depth-1 border border-slate-200 rounded-sm p-4 flex flex-col gap-4">
-        <div>
-          <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1 block">
-            Feasibility Scoring Matrix
-          </span>
-          <p className="text-xs text-slate-500 font-light mt-0.5">
-            Compare automation scores across rule-based criteria and all evaluated AI models side-by-side.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1 block">
+              Feasibility Scoring Matrix
+            </span>
+            <p className="text-xs text-slate-500 font-light mt-0.5">
+              Compare automation scores across rule-based criteria and all evaluated AI models side-by-side.
+            </p>
+          </div>
+
+          {/* Vertical Stack Segmented Scope Selector */}
+          <div className="relative flex flex-col bg-slate-200/70 p-1 rounded-md border border-slate-300/60 shrink-0 select-none min-w-[180px]">
+            {/* Smooth vertical sliding white pill background */}
+            <div
+              className="absolute left-1 right-1 rounded bg-white shadow-xs border border-slate-200/80 transition-all duration-300 ease-out"
+              style={{
+                height: "calc(50% - 6px)",
+                top: matrixScope === "all" ? "4px" : "calc(50% + 2px)",
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => setMatrixScope("all")}
+              className={`relative z-10 py-1.5 px-3 text-xs font-medium cursor-pointer border-0 bg-transparent transition-colors duration-200 flex items-center justify-between gap-3 focus:outline-none ${
+                matrixScope === "all"
+                  ? "text-teal-800 font-bold"
+                  : "text-slate-600 hover:text-slate-800"
+              }`}
+              style={{ backgroundColor: "transparent" }}
+            >
+              <span>All Activities</span>
+              <span className={`text-[10px] font-mono ${matrixScope === "all" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>
+                ({activities.length})
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMatrixScope("visible")}
+              className={`relative z-10 py-1.5 px-3 text-xs font-medium cursor-pointer border-0 bg-transparent transition-colors duration-200 flex items-center justify-between gap-3 focus:outline-none ${
+                matrixScope === "visible"
+                  ? "text-teal-800 font-bold"
+                  : "text-slate-600 hover:text-slate-800"
+              }`}
+              style={{ backgroundColor: "transparent" }}
+            >
+              <span>Visible Only</span>
+              <span className={`text-[10px] font-mono ${matrixScope === "visible" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>
+                ({Math.min(activeConfirmedNodeLimit, activities.length)})
+              </span>
+            </button>
+          </div>
         </div>
         
         {/* model summary stats - row below, side by side */}
         <div className="flex flex-row flex-wrap gap-x-8 gap-y-2 border-t border-slate-100 pt-3 text-[10px] text-slate-500 font-semibold">
-          <div>Evaluated Steps: <span className="text-slate-800 font-bold ml-1">{activities.length}</span></div>
+          <div>Displayed Steps: <span className="text-slate-800 font-bold ml-1">{displayedActivities.length} / {activities.length}</span></div>
           <div>AI Models Stored: <span className="text-slate-800 font-bold ml-1">
             {new Set(assessments.filter(a => a.type === "LLM_SINGLE_SHOT").map(a => a.model)).size}
           </span></div>
@@ -65,7 +124,7 @@ export default function FeasibilityMatrix({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {activities.map((act) => {
+            {displayedActivities.map((act) => {
               // get rule-based assessment
               const ruleAsm = assessments.find(
                 (a) => a.activityId === act.id && a.type === "RULE_BASED"
