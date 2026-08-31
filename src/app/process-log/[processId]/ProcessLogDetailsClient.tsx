@@ -43,11 +43,14 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [batchModel, setBatchModel] = useState<string>("~google/gemini-pro-latest");
   const [colorSource, setColorSource] = useState<"RULE_BASED" | "LLM">("RULE_BASED");
   const [graphModel, setGraphModel] = useState<string>("~google/gemini-pro-latest");
+  const [activeConfirmedNodeLimit, setActiveConfirmedNodeLimit] = useState<number>(20);
   const [nodeLimit, setNodeLimit] = useState<number>(20);
   const [sliderDensity, setSliderDensity] = useState<number>(20);
   useEffect(() => {
-    setSliderDensity(nodeLimit);
-  }, [nodeLimit]);
+    setActiveConfirmedNodeLimit(20);
+    setNodeLimit(20);
+    setSliderDensity(20);
+  }, [processLog.id]);
   const [batchScope, setBatchScope] = useState<"all" | "visible">("all");
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -299,7 +302,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     let targets = [...processLog.activities];
     if (batchScope === "visible") {
       const sorted = [...processLog.activities].sort((a, b) => b.frequency - a.frequency);
-      targets = sorted.slice(0, Math.min(nodeLimit, sorted.length));
+      targets = sorted.slice(0, Math.min(activeConfirmedNodeLimit, sorted.length));
     }
 
     const total = targets.length;
@@ -708,7 +711,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded border border-slate-200">
                     <div className="flex flex-col">
                       <span className="text-xs uppercase font-extrabold text-slate-500 tracking-wider">Node Density</span>
-                      <span className="text-[10px] text-slate-400 font-semibold font-mono">({nodeLimit} active on canvas)</span>
+                      <span className="text-[10px] text-slate-400 font-semibold font-mono">({activeConfirmedNodeLimit} active on canvas)</span>
                     </div>
                     <div className="flex items-baseline gap-1 bg-white px-3 py-1 rounded border border-slate-300 shadow-2xs">
                       <span className="text-lg font-black text-teal-700 font-mono">{sliderDensity}</span>
@@ -735,6 +738,8 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                     onClick={() => {
                       if (isGraphCalculating) {
                         cancelGraphRef.current?.();
+                        setNodeLimit(activeConfirmedNodeLimit);
+                        setSliderDensity(activeConfirmedNodeLimit);
                       } else {
                         setNodeLimit(sliderDensity);
                       }
@@ -809,7 +814,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                       style={{ backgroundColor: "transparent" }}
                     >
                       <span className="text-[11px] leading-tight">Visible Only</span>
-                      <span className={`text-[10px] font-mono ${batchScope === "visible" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>({Math.min(nodeLimit, processLog.activities.length)})</span>
+                      <span className={`text-[10px] font-mono ${batchScope === "visible" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>({Math.min(activeConfirmedNodeLimit, processLog.activities.length)})</span>
                     </button>
                   </div>
                 </div>
@@ -844,7 +849,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   {batchEvaluating ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                      <span>Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})</span>
+                      <span>Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(activeConfirmedNodeLimit, processLog.activities.length)})</span>
                     </>
                   ) : (
                     <span>Evaluate Batch</span>
@@ -870,6 +875,9 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           onLoadingChange={setIsGraphCalculating}
           onRegisterCancel={(cancelFn) => {
             cancelGraphRef.current = cancelFn;
+          }}
+          onLayoutSuccess={(confirmedLimit) => {
+            setActiveConfirmedNodeLimit(confirmedLimit);
           }}
         />
       </div>

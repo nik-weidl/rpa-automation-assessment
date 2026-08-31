@@ -298,6 +298,7 @@ interface ProcessGraphProps {
   isResizing?: boolean;
   onLoadingChange?: (isLoading: boolean) => void;
   onRegisterCancel?: (cancelFn: () => void) => void;
+  onLayoutSuccess?: (limit: number) => void;
 }
 
 export default function ProcessGraph({
@@ -313,6 +314,7 @@ export default function ProcessGraph({
   isResizing = false,
   onLoadingChange,
   onRegisterCancel,
+  onLayoutSuccess,
 }: ProcessGraphProps) {
   const [nodes, setNodes] = useState<CanvasNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -485,6 +487,7 @@ export default function ProcessGraph({
 
       setNodes(layoutedNodes);
       setEdges(layoutedEdges);
+      onLayoutSuccess?.(nodeLimit);
     } catch (err: any) {
       if (err.name === "AbortError") {
         return; // cleanly aborted by user
