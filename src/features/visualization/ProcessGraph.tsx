@@ -43,24 +43,19 @@ interface CanvasEdge {
 
 // ─── dagre auto-layout helper ───────────────────────────────────────────────
 
-const getLayoutedElementsAsync = async (
+// Synchronous fallback helper for Dagre layout
+const getLayoutedElementsSync = (
   nodes: CanvasNode[],
   edges: CanvasEdge[],
-  direction = "TB",
-  signal?: AbortSignal
-): Promise<{ nodes: CanvasNode[]; edges: CanvasEdge[] }> => {
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-
-  // Yield execution back to browser main thread to process UI clicks and paint loading state
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-
+  direction = "TB"
+): { nodes: CanvasNode[]; edges: CanvasEdge[] } => {
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: direction,
-    nodesep: 100, // scaled spacing between sibling nodes
-    ranksep: 180, // scaled spacing between sequential steps
+    nodesep: 100,
+    ranksep: 180,
   });
+  (g.graph() as any).maxiter = 6;
   g.setDefaultEdgeLabel(() => ({}));
 
   nodes.forEach((node) => {
@@ -71,32 +66,221 @@ const getLayoutedElementsAsync = async (
     }
   });
 
-  edges.forEach((edge) => {
-    g.setEdge(edge.source, edge.target);
+  const maxEdgeCount = Math.max(...edges.map((e) => e.data.count), 1);
+  const layoutThreshold = maxEdgeCount > 10 ? maxEdgeCount * 0.05 : 0;
+  const layoutEdges = edges.filter((e) => e.data.count >= layoutThreshold);
+
+  const connectedNodeIds = new Set<string>();
+  layoutEdges.forEach((edge) => {
+    connectedNodeIds.add(edge.source);
+    connectedNodeIds.add(edge.target);
   });
 
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  const edgeSet = new Set<string>();
+  edges.forEach((edge) => {
+    const isBackbone = edge.data.count >= layoutThreshold;
+    const isOrphanConnector = !connectedNodeIds.has(edge.source) || !connectedNodeIds.has(edge.target);
+
+    if (isBackbone || isOrphanConnector) {
+      const key = `${edge.source}->${edge.target}`;
+      if (!edgeSet.has(key)) {
+        edgeSet.add(key);
+        g.setEdge(edge.source, edge.target);
+      }
+    }
+  });
 
   dagre.layout(g);
 
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-
   return {
     nodes: nodes.map((node) => {
-      const { x, y } = g.node(node.id);
+      const layoutNode = g.node(node.id);
       const width = node.type === "start" || node.type === "end" ? 144 : 336;
       const height = 144;
+      const x = layoutNode ? layoutNode.x : 0;
+      const y = layoutNode ? layoutNode.y : 0;
 
       return {
         ...node,
         position: {
-          x: x - width / 2, // centering offset correction
+          x: x - width / 2,
           y: y - height / 2,
         },
       };
     }),
     edges,
   };
+};
+
+// Offload Dagre layout to background Web Worker thread for 0ms UI lag
+const runDagreLayoutInWorker = (
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  direction: string,
+  signal?: AbortSignal
+): Promise<{ nodes: CanvasNode[]; edges: CanvasEdge[] }> => {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(new DOMException("Aborted", "AbortError"));
+    }
+
+    const workerCode = `
+      importScripts('https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js');
+
+      self.onmessage = function(e) {
+        var nodes = e.data.nodes;
+        var edges = e.data.edges;
+        var direction = e.data.direction;
+
+        var g = new dagre.graphlib.Graph();
+        g.setGraph({
+          rankdir: direction,
+          nodesep: 100,
+          ranksep: 180,
+        });
+        if (g.graph()) {
+          g.graph().maxiter = 6;
+        }
+        g.setDefaultEdgeLabel(function() { return {}; });
+
+        nodes.forEach(function(node) {
+          if (node.type === "start" || node.type === "end") {
+            g.setNode(node.id, { width: 144, height: 144 });
+          } else {
+            g.setNode(node.id, { width: 336, height: 144 });
+          }
+        });
+
+        var maxEdgeCount = 1;
+        edges.forEach(function(e) {
+          if (e.data && e.data.count > maxEdgeCount) maxEdgeCount = e.data.count;
+        });
+
+        var layoutThreshold = maxEdgeCount > 10 ? maxEdgeCount * 0.05 : 0;
+        var connectedNodeIds = {};
+        edges.forEach(function(e) {
+          if (e.data && e.data.count >= layoutThreshold) {
+            connectedNodeIds[e.source] = true;
+            connectedNodeIds[e.target] = true;
+          }
+        });
+
+        var edgeSet = {};
+        edges.forEach(function(edge) {
+          var isBackbone = edge.data && edge.data.count >= layoutThreshold;
+          var isOrphan = !connectedNodeIds[edge.source] || !connectedNodeIds[edge.target];
+          if (isBackbone || isOrphan) {
+            var key = edge.source + "->" + edge.target;
+            if (!edgeSet[key]) {
+              edgeSet[key] = true;
+              g.setEdge(edge.source, edge.target);
+            }
+          }
+        });
+
+        dagre.layout(g);
+
+        var layoutedNodes = nodes.map(function(node) {
+          var layoutNode = g.node(node.id);
+          var width = node.type === "start" || node.type === "end" ? 144 : 336;
+          var height = 144;
+          var x = layoutNode ? layoutNode.x : 0;
+          var y = layoutNode ? layoutNode.y : 0;
+
+          return {
+            id: node.id,
+            type: node.type,
+            data: node.data,
+            position: {
+              x: x - width / 2,
+              y: y - height / 2,
+            },
+          };
+        });
+
+        self.postMessage({ nodes: layoutedNodes, edges: edges });
+      };
+    `;
+
+    let blobUrl: string | null = null;
+    let worker: Worker | null = null;
+
+    try {
+      const blob = new Blob([workerCode], { type: "application/javascript" });
+      blobUrl = URL.createObjectURL(blob);
+      worker = new Worker(blobUrl);
+    } catch {
+      try {
+        const layoutResult = getLayoutedElementsSync(nodes, edges, direction);
+        return resolve(layoutResult);
+      } catch (err) {
+        return reject(err);
+      }
+    }
+
+    const cleanup = () => {
+      if (worker) {
+        worker.terminate();
+        worker = null;
+      }
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        blobUrl = null;
+      }
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        cleanup();
+        return reject(new DOMException("Aborted", "AbortError"));
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    worker.onmessage = (e) => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      const data = e.data;
+      cleanup();
+      resolve(data);
+    };
+
+    worker.onerror = () => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      cleanup();
+      try {
+        const layoutResult = getLayoutedElementsSync(nodes, edges, direction);
+        resolve(layoutResult);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    worker.postMessage({ nodes, edges, direction });
+  });
+};
+
+const getLayoutedElementsAsync = async (
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  direction = "TB",
+  signal?: AbortSignal
+): Promise<{ nodes: CanvasNode[]; edges: CanvasEdge[] }> => {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+  // Allow browser UI to paint loading state before background worker runs
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+  return runDagreLayoutInWorker(nodes, edges, direction, signal);
 };
 
 // ─── main component ─────────────────────────────────────────────────────────
