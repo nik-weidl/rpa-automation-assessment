@@ -761,75 +761,93 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
               <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
                 Batch LLM Evaluator
               </span>
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm space-y-2.5 mt-2" style={{ padding: "12px", border: "1px solid #e0e0e0", backgroundColor: "#fafafa" }}>
-                {/* scope select */}
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-650">
-                  <span className="text-slate-400 text-[10px]">Scope:</span>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="batchScope"
-                        value="all"
-                        checked={batchScope === "all"}
-                        onChange={() => setBatchScope("all")}
-                        disabled={batchEvaluating}
-                        className="accent-teal-600 cursor-pointer"
-                      />
-                      <span>All ({processLog.activities.length})</span>
-                    </label>
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="batchScope"
-                        value="visible"
-                        checked={batchScope === "visible"}
-                        onChange={() => setBatchScope("visible")}
-                        disabled={batchEvaluating}
-                        className="accent-teal-600 cursor-pointer"
-                      />
-                      <span>Visible ({Math.min(nodeLimit, processLog.activities.length)})</span>
-                    </label>
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded space-y-3">
+                {/* Scope Selection */}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Target Scope
+                  </span>
+                  <div className="relative grid grid-cols-2 bg-slate-200/70 p-1 rounded-md border border-slate-300/60 overflow-hidden select-none">
+                    {/* Smooth sliding white pill background */}
+                    <div
+                      className="absolute top-1 bottom-1 rounded bg-white shadow-xs border border-slate-200/80 transition-all duration-300 ease-out"
+                      style={{
+                        width: "calc(50% - 6px)",
+                        left: batchScope === "all" ? "4px" : "calc(50% + 2px)",
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      disabled={batchEvaluating}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        setBatchScope("all");
+                      }}
+                      className={`relative z-10 py-1.5 px-2 text-xs cursor-pointer border-0 bg-transparent transition-colors duration-200 flex flex-col items-center justify-center focus:outline-none ${
+                        batchScope === "all"
+                          ? "text-teal-800 font-bold"
+                          : "text-slate-600 hover:text-slate-800 font-medium"
+                      }`}
+                      style={{ backgroundColor: "transparent" }}
+                    >
+                      <span className="text-[11px] leading-tight">All Nodes</span>
+                      <span className={`text-[10px] font-mono ${batchScope === "all" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>({processLog.activities.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={batchEvaluating}
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        setBatchScope("visible");
+                      }}
+                      className={`relative z-10 py-1.5 px-2 text-xs cursor-pointer border-0 bg-transparent transition-colors duration-200 flex flex-col items-center justify-center focus:outline-none ${
+                        batchScope === "visible"
+                          ? "text-teal-800 font-bold"
+                          : "text-slate-600 hover:text-slate-800 font-medium"
+                      }`}
+                      style={{ backgroundColor: "transparent" }}
+                    >
+                      <span className="text-[11px] leading-tight">Visible Only</span>
+                      <span className={`text-[10px] font-mono ${batchScope === "visible" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>({Math.min(nodeLimit, processLog.activities.length)})</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* model select */}
-                <select
-                  disabled={batchEvaluating}
-                  value={batchModel}
-                  onChange={(e) => setBatchModel(e.target.value)}
-                  className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    height: "30px",
-                    padding: "2px",
-                    border: "none",
-                    borderBottom: "1px solid #9e9e9e",
-                    backgroundColor: "transparent"
-                  }}
-                >
-                  {SUPPORTED_MODELS.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
+                {/* Model Selection */}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Evaluation Model
+                  </span>
+                  <select
+                    disabled={batchEvaluating}
+                    value={batchModel}
+                    onChange={(e) => setBatchModel(e.target.value)}
+                    className="browser-default w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-700 font-medium focus:outline-none focus:border-teal-500 cursor-pointer"
+                    style={{ display: "block" }}
+                  >
+                    {SUPPORTED_MODELS.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {/* run button */}
                 <button
+                  type="button"
                   disabled={batchEvaluating}
                   onClick={handleRunBatchLlmEvaluation}
-                  className="btn waves-effect waves-light teal darken-1 w-full text-xs font-semibold uppercase tracking-wider"
-                  style={{ height: "32px", lineHeight: "32px", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%" }}
+                  className="w-full py-2 px-3 rounded text-[11px] font-extrabold uppercase tracking-wider cursor-pointer border-0 bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-xs transition-all mt-1"
                 >
                   {batchEvaluating ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
-                      Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})...
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(nodeLimit, processLog.activities.length)})</span>
                     </>
                   ) : (
-                    "Evaluate Batch"
+                    <span>Evaluate Batch</span>
                   )}
                 </button>
               </div>
