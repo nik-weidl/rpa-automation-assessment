@@ -128,3 +128,11 @@
     @apply font-sans;
   }
 }
+
+/* Hide Next.js Dev Overlay & Indicator Toast */
+nextjs-portal,
+#next-dev-overlay,
+[data-nextjs-dev-overlay],
+[data-nextjs-toast] {
+  display: none !important;
+}
