@@ -77,8 +77,15 @@ export default function ComparativeWorkbenchModal({
                     {/* model header */}
                     <div className={`p-4 border-b flex items-center justify-between ${scoreColor}`}>
                       <div>
-                        <span className="font-semibold text-xs tracking-wider uppercase text-slate-800 block" style={{ fontSize: "11px", fontWeight: "bold" }}>
+                        <span className="font-semibold text-xs tracking-wider uppercase text-slate-800 flex items-center gap-1.5" style={{ fontSize: "11px", fontWeight: "bold" }}>
                           {displayName}
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold ${
+                            asm.type === "LLM_AGENTIC"
+                              ? "bg-purple-100 text-purple-700 border border-purple-200"
+                              : "bg-slate-100 text-slate-600 border border-slate-200"
+                          }`}>
+                            {asm.type === "LLM_AGENTIC" ? "Agentic" : "Single-Shot"}
+                          </span>
                         </span>
                         <p className="text-[9px] text-slate-500 font-light mt-0.5">
                           Latency: {asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: {formatCost(asm.costUsd, asm.model)}

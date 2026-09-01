@@ -9,11 +9,11 @@ beforeAll(async () => {
   await fs.mkdir(TMP_DIR, { recursive: true });
   try {
     await fs.copyFile(SAMPLE, path.join(TMP_DIR, "BPIC15_4.xes"));
-    // Ensure adapter picks up our uploads dir by setting env before importing
+    // ensure adapter picks up our uploads dir by setting env before importing
     process.env.UPLOADS_DIR = TMP_DIR;
   } catch (err) {
-    // If sample is missing, tests will be skipped via runtime checks
-    console.warn("Sample XES not found at", SAMPLE);
+    // if sample is missing, tests will be skipped via runtime checks
+    console.warn("sample xes not found at", SAMPLE);
   }
 });
 
@@ -25,12 +25,12 @@ afterAll(async () => {
 });
 
 test("parseXesFile returns a valid XesLog structure", async () => {
-  // Ensure the real pm4js importer is loaded for an integration-style test.
+  // ensure the real pm4js importer is loaded for an integration-style test.
   try {
     await import("pm4js/init.js");
   } catch (e) {
-    // If pm4js can't be loaded in this environment, let the adapter attempt its own imports.
-    // The adapter will throw if importer truly isn't available.
+    // if pm4js can't be loaded in this environment, let the adapter attempt its own imports.
+    // the adapter will throw if importer truly isn't available.
   }
 
   const { parseXesFile } = await import("./adapter");

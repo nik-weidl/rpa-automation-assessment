@@ -46,6 +46,10 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [activeConfirmedNodeLimit, setActiveConfirmedNodeLimit] = useState<number>(20);
   const [nodeLimit, setNodeLimit] = useState<number>(20);
   const [sliderDensity, setSliderDensity] = useState<number>(20);
+  const [evalType, setEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_SINGLE_SHOT");
+  const [graphEvalType, setGraphEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_SINGLE_SHOT");
+  const [batchEvalType, setBatchEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_SINGLE_SHOT");
+  const [liveThinkingTrace, setLiveThinkingTrace] = useState<any[]>([]);
   useEffect(() => {
     setActiveConfirmedNodeLimit(20);
     setNodeLimit(20);
@@ -166,9 +170,9 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
 
     // 2. standardization: execution duration coefficient of variation (32.2%)
     const cv = act.averageDuration > 0 ? Math.sqrt(act.durationVariance) / act.averageDuration : 0;
-    // Use hyperbolic decay (1 / (1 + CV)) instead of linear clamping (1 - CV)
+    // use hyperbolic decay (1 / (1 + CV)) instead of linear clamping (1 - CV)
     // to map the coefficient of variation (CV) smoothly to [0, 1].
-    // This prevents the score from collapsing to exactly 0% whenever CV >= 1.0,
+    // this prevents the score from collapsing to exactly 0% whenever CV >= 1.0,
     // ensuring the progress bar renders dynamically for all variation ranges.
     const scoreDurationVariance = 1 / (1 + cv);
 
@@ -242,66 +246,122 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   // resolve all LLM assessments for the selected activity
   const activityLlmAssessments = selectedActivity && processLog.assessments && activity
     ? processLog.assessments.filter(
-        (a) => a.activityId === activity.id && a.type === "LLM_SINGLE_SHOT"
+        (a) => a.activityId === activity.id && (a.type === "LLM_SINGLE_SHOT" || a.type === "LLM_AGENTIC")
       )
     : [];
 
-  // synchronize viewLlmModel state when selected activity or assessments collection changes
+  const [viewLlmAssessmentId, setViewLlmAssessmentId] = useState<string | null>(null);
+
+  // synchronize viewLlmAssessmentId state when selected activity or assessments collection changes
   useEffect(() => {
     if (activity && activityLlmAssessments.length > 0) {
-      // default to the active selected model if an assessment exists for it, otherwise fallback to the first available
-      const hasSelectedModel = activityLlmAssessments.some(a => a.model === selectedModel);
-      if (hasSelectedModel) {
-        setViewLlmModel(selectedModel);
-      } else {
-        setViewLlmModel(activityLlmAssessments[0].model);
+      const match = activityLlmAssessments.find((a) => a.type === "LLM_AGENTIC" && a.model === selectedModel)
+        || activityLlmAssessments.find((a) => a.type === "LLM_AGENTIC")
+        || activityLlmAssessments.find((a) => a.type === evalType && a.model === selectedModel)
+        || activityLlmAssessments.find((a) => a.model === selectedModel)
+        || activityLlmAssessments[0];
+      setViewLlmAssessmentId(match.id);
+      if (match.type === "LLM_AGENTIC" || match.type === "LLM_SINGLE_SHOT") {
+        setEvalType(match.type as any);
       }
     } else {
-      setViewLlmModel(null);
+      setViewLlmAssessmentId(null);
     }
   }, [selectedActivity, processLog.assessments]);
 
-  // resolve currently viewed LLM assessment details based on selected tab
-  const llmAssessment = selectedActivity && processLog.assessments && viewLlmModel
-    ? processLog.assessments.find(
-        (a) => a.activityId === activity?.id && a.type === "LLM_SINGLE_SHOT" && a.model === viewLlmModel
-      )
-    : null;
+  // resolve currently viewed LLM assessment details based on selected tab ID
+  const llmAssessment = selectedActivity && processLog.assessments && viewLlmAssessmentId
+    ? processLog.assessments.find((a) => a.id === viewLlmAssessmentId) || null
+    : (activityLlmAssessments.length > 0 ? activityLlmAssessments[0] : null);
 
   // run single-activity LLM feasibility evaluation
   const handleRunLlmEvaluation = async () => {
     if (!activity) return;
     setEvaluating(true);
     setEvalError(null);
+    setLiveThinkingTrace([]);
 
-    try {
-      const response = await fetch("/api/assessments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          activityId: activity.id,
-          type: "LLM_SINGLE_SHOT",
-          model: selectedModel,
-        }),
-      });
+    if (evalType === "LLM_AGENTIC") {
+      try {
+        const response = await fetch("/api/assessments/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            activityId: activity.id,
+            model: selectedModel,
+          }),
+        });
 
-      const res = await response.json();
-      if (!response.ok) {
-        throw new Error(res.error || "failed to evaluate activity");
+        if (!response.ok || !response.body) {
+          throw new Error("failed to initiate stream");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data: ")) {
+              try {
+                const eventData = JSON.parse(trimmed.replace(/^data:\s*/, ""));
+                if (eventData.type === "step") {
+                  setLiveThinkingTrace((prev) => [...prev, eventData.step]);
+                } else if (eventData.type === "error") {
+                  throw new Error(eventData.error);
+                }
+              } catch (parseErr: any) {
+                console.error("error parsing stream event", parseErr);
+              }
+            }
+          }
+        }
+
+        router.refresh();
+        if (selectedModel === graphModel) {
+          setGraphReloadTrigger((prev) => prev + 1);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setEvalError(err.message || "failed to run agentic evaluation stream");
+      } finally {
+        setEvaluating(false);
       }
+    } else {
+      try {
+        const response = await fetch("/api/assessments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            activityId: activity.id,
+            type: "LLM_SINGLE_SHOT",
+            model: selectedModel,
+          }),
+        });
 
-      // refresh Next.js server page content to fetch updated assessments
-      router.refresh();
+        const res = await response.json();
+        if (!response.ok) {
+          throw new Error(res.error || "failed to evaluate activity");
+        }
 
-      // check if the model just evaluated is the same as the selected overlay model
-      if (selectedModel === graphModel) {
-        setGraphReloadTrigger((prev) => prev + 1);
+        router.refresh();
+        if (selectedModel === graphModel) {
+          setGraphReloadTrigger((prev) => prev + 1);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setEvalError(err.message || "failed to run evaluation");
+      } finally {
+        setEvaluating(false);
       }
-    } catch (err: any) {
-      console.error(err);
-      setEvalError(err.message || "failed to run evaluation");
-    } finally {
-      setEvaluating(false);
     }
   };
 
@@ -338,7 +398,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               activityId: targetAct.id,
-              type: "LLM_SINGLE_SHOT",
+              type: batchEvalType,
               model: batchModel,
             }),
           });
@@ -362,8 +422,11 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     setBatchEvaluating(false);
     router.refresh();
     
-    // invalidate transition graph fetch cache to trigger instant overlay refresh
+    // invalidate transition graph fetch cache and sync overlay mode to trigger instant overlay refresh
     if (batchModel === graphModel) {
+      if (batchEvalType === "LLM_AGENTIC") {
+        setGraphEvalType("LLM_AGENTIC");
+      }
       setGraphReloadTrigger((prev) => prev + 1);
     }
   };
@@ -683,7 +746,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   onClick={() => setColorSource("LLM")}
                   className={`flex-1 py-1.5 text-[9px] font-bold uppercase rounded-sm transition-all cursor-pointer border-0 ${
                     colorSource === "LLM"
-                      ? "teal white-text z-depth-1"
+                      ? (graphEvalType === "LLM_AGENTIC" ? "purple darken-1 white-text z-depth-1" : "teal white-text z-depth-1")
                       : "bg-transparent text-slate-500"
                   }`}
                 >
@@ -691,27 +754,46 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 </button>
               </div>
               {colorSource === "LLM" && (
-                <select
-                  value={graphModel}
-                  onChange={(e) => setGraphModel(e.target.value)}
-                  className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    height: "30px",
-                    padding: "2px",
-                    border: "none",
-                    borderBottom: "1px solid #9e9e9e",
-                    backgroundColor: "transparent",
-                    marginTop: "5px"
-                  }}
-                >
-                  {SUPPORTED_MODELS.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-1.5 mt-2">
+                  <select
+                    value={graphEvalType}
+                    onChange={(e) => setGraphEvalType(e.target.value as any)}
+                    className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      height: "30px",
+                      padding: "2px",
+                      border: "none",
+                      borderBottom: "1px solid #9e9e9e",
+                      backgroundColor: "transparent"
+                    }}
+                  >
+                    <option value="LLM_SINGLE_SHOT">Single-Shot LLM Overlay</option>
+                    <option value="LLM_AGENTIC">Agentic Loop (6-Step) Overlay</option>
+                  </select>
+
+                  <select
+                    value={graphModel}
+                    onChange={(e) => setGraphModel(e.target.value)}
+                    className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      height: "30px",
+                      padding: "2px",
+                      border: "none",
+                      borderBottom: "1px solid #9e9e9e",
+                      backgroundColor: "transparent"
+                    }}
+                  >
+                    {SUPPORTED_MODELS.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
 
@@ -833,6 +915,23 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   </div>
                 </div>
 
+                {/* Evaluation Mode / Type Selection */}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Evaluation Mode
+                  </span>
+                  <select
+                    disabled={batchEvaluating}
+                    value={batchEvalType}
+                    onChange={(e) => setBatchEvalType(e.target.value as any)}
+                    className="browser-default w-full h-8 bg-white border border-slate-300 rounded px-2 text-xs text-slate-700 font-medium focus:outline-none focus:border-teal-500 cursor-pointer"
+                    style={{ display: "block" }}
+                  >
+                    <option value="LLM_SINGLE_SHOT">Single-Shot Prompt Batch</option>
+                    <option value="LLM_AGENTIC">Agentic Loop (6-Step) Batch</option>
+                  </select>
+                </div>
+
                 {/* Model Selection */}
                 <div className="space-y-1">
                   <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
@@ -878,7 +977,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         <ProcessGraph
           processLogId={processLog.id}
           onNodeSelect={setSelectedActivity}
-          assessmentType={colorSource === "RULE_BASED" ? "RULE_BASED" : "LLM_SINGLE_SHOT"}
+          assessmentType={colorSource === "RULE_BASED" ? "RULE_BASED" : graphEvalType}
           model={colorSource === "RULE_BASED" ? null : graphModel}
           nodeLimit={nodeLimit}
           onNodeLimitChange={setNodeLimit}
@@ -924,10 +1023,13 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 activityAssessment={activityAssessment || null}
                 activityLlmAssessments={activityLlmAssessments}
                 llmAssessment={llmAssessment || null}
-                viewLlmModel={viewLlmModel}
-                setViewLlmModel={setViewLlmModel}
+                viewLlmAssessmentId={viewLlmAssessmentId}
+                setViewLlmAssessmentId={setViewLlmAssessmentId}
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
+                evalType={evalType}
+                setEvalType={setEvalType}
+                liveThinkingTrace={liveThinkingTrace}
                 evaluating={evaluating}
                 evalError={evalError}
                 handleRunLlmEvaluation={handleRunLlmEvaluation}

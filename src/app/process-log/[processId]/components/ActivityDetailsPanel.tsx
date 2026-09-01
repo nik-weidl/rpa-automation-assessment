@@ -9,10 +9,13 @@ interface ActivityDetailsPanelProps {
   activityAssessment: Assessment | null;
   activityLlmAssessments: Assessment[];
   llmAssessment: Assessment | null;
-  viewLlmModel: string | null;
-  setViewLlmModel: (model: string | null) => void;
+  viewLlmAssessmentId: string | null;
+  setViewLlmAssessmentId: (id: string | null) => void;
   selectedModel: string;
   setSelectedModel: (model: string) => void;
+  evalType: "LLM_SINGLE_SHOT" | "LLM_AGENTIC";
+  setEvalType: (type: "LLM_SINGLE_SHOT" | "LLM_AGENTIC") => void;
+  liveThinkingTrace?: any[];
   evaluating: boolean;
   evalError: string | null;
   handleRunLlmEvaluation: () => void;
@@ -28,10 +31,13 @@ export default function ActivityDetailsPanel({
   activityAssessment,
   activityLlmAssessments,
   llmAssessment,
-  viewLlmModel,
-  setViewLlmModel,
+  viewLlmAssessmentId,
+  setViewLlmAssessmentId,
   selectedModel,
   setSelectedModel,
+  evalType,
+  setEvalType,
+  liveThinkingTrace = [],
   evaluating,
   evalError,
   handleRunLlmEvaluation,
@@ -40,6 +46,61 @@ export default function ActivityDetailsPanel({
   formatCost,
   getSubScores,
 }: ActivityDetailsPanelProps) {
+  const activeTrace = (evaluating && liveThinkingTrace && liveThinkingTrace.length > 0)
+    ? liveThinkingTrace
+    : (llmAssessment?.rawResponse as any)?.thinkingTrace;
+  const isLiveTrace = evaluating && liveThinkingTrace && liveThinkingTrace.length > 0;
+
+  const renderThinkingTrace = (traceSteps: any[], isLive: boolean = false) => {
+    if (!traceSteps || traceSteps.length === 0) return null;
+    return (
+      <div className="card bg-slate-900 text-slate-100 p-4 rounded-sm space-y-3 font-mono text-xs border border-slate-700 shadow-inner">
+        <div className="flex items-center justify-between border-b border-slate-700 pb-2 text-[10px] uppercase font-bold tracking-wider text-teal-400">
+          <div className="flex items-center gap-1.5">
+            <i className="material-icons text-sm text-teal-400" style={{ fontSize: "16px" }}>psychology</i>
+            <span>Agent Thinking Trace (Chain-of-Thought)</span>
+            {isLive && (
+              <span className="flex items-center gap-1 text-purple-400 ml-2 animate-pulse font-normal">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Streaming Steps Live...</span>
+              </span>
+            )}
+          </div>
+          <span className="text-slate-400 text-[9px]">
+            {isLive ? `${traceSteps.length} Steps Received` : "6-Step Deep Execution"}
+          </span>
+        </div>
+
+        <div className="space-y-2.5">
+          {traceSteps.map((step: any, idx: number) => (
+            <div key={idx} className="space-y-1 bg-slate-800/80 p-2.5 rounded-sm border border-slate-700/60 text-[11px] transition-all duration-200">
+              <div className="flex items-center justify-between text-teal-300 font-semibold text-[10px] uppercase tracking-wide">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                  <span>Step {idx + 1}: {step.title}</span>
+                </span>
+                <span className="text-slate-400 text-[9px] lowercase font-normal">{step.type}</span>
+              </div>
+              <p className="text-slate-200 font-light leading-relaxed whitespace-pre-wrap">{step.content}</p>
+
+              {step.type === "retrieval" && step.details && (
+                <div className="mt-2 bg-slate-950 p-2 rounded text-[10px] text-teal-200 border border-slate-800 space-y-1">
+                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Retrieved Tool Metrics:</div>
+                  {Object.entries(step.details).map(([k, metric]: [string, any]) => (
+                    <div key={k} className="flex items-center justify-between">
+                      <span className="text-slate-400 font-mono">{k}:</span>
+                      <span className="font-semibold text-teal-300">{metric.description || metric.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-[200px] flex flex-col font-sans text-slate-800">
       <div className="flex-1 flex flex-col justify-center">
@@ -333,18 +394,27 @@ export default function ActivityDetailsPanel({
                         {activityLlmAssessments.map((asm) => {
                           const modelInfo = SUPPORTED_MODELS.find(m => m.id === asm.model);
                           const displayName = modelInfo?.name || asm.model?.split("/").pop() || "Unknown Model";
-                          const isSelected = viewLlmModel === asm.model;
+                          const isSelected = viewLlmAssessmentId === asm.id;
+                          const isAgentic = asm.type === "LLM_AGENTIC";
                           return (
                             <button
                               key={asm.id}
-                              onClick={() => setViewLlmModel(asm.model)}
-                              className={`text-[9px] px-2.5 py-1 rounded-sm border uppercase tracking-wider font-semibold transition-all duration-150 ${
+                              onClick={() => {
+                                setViewLlmAssessmentId(asm.id);
+                                setEvalType(asm.type as any);
+                                if (asm.model) setSelectedModel(asm.model);
+                              }}
+                              className={`text-[9px] px-2.5 py-1 rounded-sm border uppercase tracking-wider font-semibold transition-all duration-150 flex items-center gap-1 cursor-pointer ${
                                 isSelected
-                                  ? "bg-teal-600 text-white border-teal-600 font-bold shadow-sm"
-                                  : "bg-white text-slate-500 hover:bg-slate-50 border-slate-200"
+                                  ? isAgentic ? "bg-purple-700 text-white border-purple-700 font-bold shadow-sm" : "bg-teal-600 text-white border-teal-600 font-bold shadow-sm"
+                                  : isAgentic ? "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200" : "bg-white text-slate-500 hover:bg-slate-50 border-slate-200"
                               }`}
                             >
-                              {displayName} ({asm.score}%)
+                              <span>{displayName}</span>
+                              <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isAgentic ? (isSelected ? "bg-purple-900 text-purple-100" : "bg-purple-200 text-purple-800") : (isSelected ? "bg-teal-800 text-teal-100" : "bg-slate-100 text-slate-600")}`}>
+                                {isAgentic ? "Agentic" : "Single"}
+                              </span>
+                              <span>({asm.score}%)</span>
                             </button>
                           );
                         })}
@@ -360,12 +430,41 @@ export default function ActivityDetailsPanel({
                     </div>
                   )}
                   {/* reasoning block */}
-                  <div className="card bg-teal-50/5 border border-teal-200 p-4 rounded-sm text-slate-700 text-xs leading-relaxed space-y-1">
-                    <div className="text-[10px] uppercase font-bold tracking-wider text-teal-600">
-                      AI Assessment Reasoning
+                  <div className="card bg-teal-50/5 border border-teal-200 p-4 rounded-sm text-slate-700 text-xs leading-relaxed space-y-2">
+                    <div className="text-[10px] uppercase font-bold tracking-wider text-teal-600 flex items-center justify-between">
+                      <span>AI Assessment Reasoning</span>
+                      {llmAssessment.type === "LLM_AGENTIC" && (
+                        <div className="flex items-center gap-1.5">
+                          {(llmAssessment.rawResponse as any)?.rpaArchetypeLabel && (
+                            <span className="bg-blue-100 text-blue-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-blue-200">
+                              {(llmAssessment.rawResponse as any).rpaArchetypeLabel}
+                            </span>
+                          )}
+                          {(llmAssessment.rawResponse as any)?.implementationEffort && (
+                            <span className="bg-purple-100 text-purple-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-purple-200">
+                              Effort: {(llmAssessment.rawResponse as any).implementationEffort}
+                            </span>
+                          )}
+                          <span className="bg-purple-600 text-white text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider shadow-xs">
+                            6-Step Agentic Loop
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <p className="font-light leading-relaxed">{llmAssessment.reasoning}</p>
+
+                    {(llmAssessment.rawResponse as any)?.effortRationale && (
+                      <div className="text-[10px] text-slate-500 font-mono border-t border-teal-100 pt-2 flex justify-between">
+                        <span>Implementation Note: {(llmAssessment.rawResponse as any).effortRationale}</span>
+                        {(llmAssessment.rawResponse as any)?.estimatedMonthlyHoursSaved !== undefined && (
+                          <span className="font-bold text-teal-700">~{(llmAssessment.rawResponse as any).estimatedMonthlyHoursSaved} hrs/mo saved</span>
+                        )}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Agent Thinking Trace (Chain of Thought) */}
+                  {renderThinkingTrace(activeTrace, isLiveTrace)}
 
                   {/* risks & missing info columns */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">                    {/* column 1: risks */}
@@ -420,7 +519,26 @@ export default function ActivityDetailsPanel({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                      <select
+                        disabled={evaluating}
+                        value={evalType}
+                        onChange={(e) => setEvalType(e.target.value as any)}
+                        className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
+                        style={{
+                          display: "block",
+                          width: "auto",
+                          height: "32px",
+                          padding: "2px",
+                          border: "none",
+                          borderBottom: "1px solid #9e9e9e",
+                          backgroundColor: "transparent"
+                        }}
+                      >
+                        <option value="LLM_SINGLE_SHOT">Single-Shot Prompt</option>
+                        <option value="LLM_AGENTIC">Agentic Loop (with Trace)</option>
+                      </select>
+
                       <select
                         disabled={evaluating}
                         value={selectedModel}
@@ -461,7 +579,9 @@ export default function ActivityDetailsPanel({
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 bg-teal-50/10 border border-teal-200 p-4 rounded-sm">
+                <div className="space-y-4">
+                  {renderThinkingTrace(activeTrace, isLiveTrace)}
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 bg-teal-50/10 border border-teal-200 p-4 rounded-sm">
                   <div className="flex-1 space-y-1">
                     <span className="font-semibold text-xs text-teal-850 flex items-center gap-1.5 block" style={{ fontSize: "12px", fontWeight: "bold" }}>
                       <Sparkles className="w-3.5 h-3.5 text-teal-605" />
@@ -472,6 +592,25 @@ export default function ActivityDetailsPanel({
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row items-stretch gap-2 shrink-0">
+                    <select
+                      disabled={evaluating}
+                      value={evalType}
+                      onChange={(e) => setEvalType(e.target.value as any)}
+                      className="browser-default font-medium text-xs text-slate-700 cursor-pointer"
+                      style={{
+                        display: "block",
+                        width: "auto",
+                        height: "32px",
+                        padding: "2px",
+                        border: "none",
+                        borderBottom: "1px solid #9e9e9e",
+                        backgroundColor: "transparent"
+                      }}
+                    >
+                      <option value="LLM_SINGLE_SHOT">Single-Shot Prompt</option>
+                      <option value="LLM_AGENTIC">Agentic Loop (with Trace)</option>
+                    </select>
+
                     <select
                       disabled={evaluating}
                       value={selectedModel}
@@ -510,7 +649,8 @@ export default function ActivityDetailsPanel({
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
             </div>
           </div>
         ) : (

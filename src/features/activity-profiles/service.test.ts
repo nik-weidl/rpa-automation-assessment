@@ -107,7 +107,7 @@ test("calculateAndStoreActivityProfiles correctly ingests and computes metrics",
   const activities = await prisma.activity.findMany({
     where: { processLogId: testLogId },
   });
-  expect(activities.length).toBe(3); // A, B, and C
+  expect(activities.length).toBe(3); // a, b, and c
 
   const profileA = activities.find((a) => a.name === "A");
   const profileB = activities.find((a) => a.name === "B");

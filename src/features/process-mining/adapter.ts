@@ -31,14 +31,14 @@ const UPLOADS_DIR = process.env.UPLOADS_DIR || "/tmp/uploads";
 async function ensurePm4jsImporter() {
   if (globalThis.XesImporter) return;
 
-  // Try loading the library's init entry which wires up importers
+  // try loading the library's init entry which wires up importers
   try {
-    // Prefer the explicit init path to avoid directory import issues
-    // This will execute pm4js's initialization and register XesImporter on globalThis
+    // prefer the explicit init path to avoid directory import issues
+    // this will execute pm4js's initialization and register XesImporter on globalThis
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     await import("pm4js/init.js");
   } catch (e) {
-    // Fallback: try importing the package entry and check for exported importer
+    // fallback: try importing the package entry and check for exported importer
     try {
       const pm = await import("pm4js");
       // some builds may export under default

@@ -43,7 +43,7 @@ interface CanvasEdge {
 
 // ─── dagre auto-layout helper ───────────────────────────────────────────────
 
-// Synchronous fallback helper for Dagre layout
+// synchronous fallback helper for Dagre layout
 const getLayoutedElementsSync = (
   nodes: CanvasNode[],
   edges: CanvasEdge[],
@@ -112,7 +112,7 @@ const getLayoutedElementsSync = (
   };
 };
 
-// Offload Dagre layout to background Web Worker thread for 0ms UI lag
+// offload Dagre layout to background Web Worker thread for 0ms UI lag
 const runDagreLayoutInWorker = (
   nodes: CanvasNode[],
   edges: CanvasEdge[],
@@ -276,7 +276,7 @@ const getLayoutedElementsAsync = async (
 ): Promise<{ nodes: CanvasNode[]; edges: CanvasEdge[] }> => {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-  // Allow browser UI to paint loading state before background worker runs
+  // allow browser UI to paint loading state before background worker runs
   await new Promise((resolve) => setTimeout(resolve, 0));
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
@@ -548,7 +548,7 @@ export default function ProcessGraph({
     }
   }, [nodes, processLogId, nodeLimit, direction, fitView]);
 
-  // Center and zoom in on a specific node when focused
+  // center and zoom in on a specific node when focused
   const centerAndZoomOnNode = useCallback(
     (targetIdOrName: string) => {
       if (nodes.length === 0) return;
@@ -920,7 +920,7 @@ export default function ProcessGraph({
 
       drawGrid(ctx, width, height);
 
-      // Viewport Culling (off-screen clipping) bounds
+      // viewport culling (off-screen clipping) bounds
       const margin = 60;
       const visibleMinX = -offsetX / zoom - margin;
       const visibleMinY = -offsetY / zoom - margin;

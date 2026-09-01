@@ -22,6 +22,7 @@ export default function FeasibilityMatrix({
   isExpanded = false,
 }: FeasibilityMatrixProps) {
   const [matrixScope, setMatrixScope] = useState<"all" | "visible">("visible");
+  const [matrixTypeFilter, setMatrixTypeFilter] = useState<"ALL" | "LLM_SINGLE_SHOT" | "LLM_AGENTIC">("ALL");
 
   const displayedActivities = useMemo(() => {
     if (matrixScope === "visible") {
@@ -33,73 +34,27 @@ export default function FeasibilityMatrix({
 
   const totalLlmCostUsd = assessments
     ? assessments
-        .filter((a) => a.type === "LLM_SINGLE_SHOT" && a.costUsd !== null && a.costUsd !== undefined)
+        .filter((a) => (a.type === "LLM_SINGLE_SHOT" || a.type === "LLM_AGENTIC") && a.costUsd !== null && a.costUsd !== undefined)
         .reduce((sum, a) => sum + (a.costUsd || 0), 0)
     : 0;
 
   return (
     <div className="space-y-6 font-sans">
-      <div className="card bg-white z-depth-1 border border-slate-200 rounded-sm p-4 flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1 block">
-              Feasibility Scoring Matrix
-            </span>
-            <p className="text-xs text-slate-500 font-light mt-0.5">
-              Compare automation scores across rule-based criteria and all evaluated AI models side-by-side.
-            </p>
-          </div>
-
-          {/* Vertical Stack Segmented Scope Selector */}
-          <div className="relative flex flex-col bg-slate-200/70 p-1 rounded-md border border-slate-300/60 shrink-0 select-none min-w-[180px]">
-            {/* Smooth vertical sliding white pill background */}
-            <div
-              className="absolute left-1 right-1 rounded bg-white shadow-xs border border-slate-200/80 transition-all duration-300 ease-out"
-              style={{
-                height: "calc(50% - 6px)",
-                top: matrixScope === "all" ? "4px" : "calc(50% + 2px)",
-              }}
-            />
-
-            <button
-              type="button"
-              onClick={() => setMatrixScope("all")}
-              className={`relative z-10 py-1.5 px-3 text-xs font-medium cursor-pointer border-0 bg-transparent transition-colors duration-200 flex items-center justify-between gap-3 focus:outline-none ${
-                matrixScope === "all"
-                  ? "text-teal-800 font-bold"
-                  : "text-slate-600 hover:text-slate-800"
-              }`}
-              style={{ backgroundColor: "transparent" }}
-            >
-              <span>All Activities</span>
-              <span className={`text-[10px] font-mono ${matrixScope === "all" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>
-                ({activities.length})
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setMatrixScope("visible")}
-              className={`relative z-10 py-1.5 px-3 text-xs font-medium cursor-pointer border-0 bg-transparent transition-colors duration-200 flex items-center justify-between gap-3 focus:outline-none ${
-                matrixScope === "visible"
-                  ? "text-teal-800 font-bold"
-                  : "text-slate-600 hover:text-slate-800"
-              }`}
-              style={{ backgroundColor: "transparent" }}
-            >
-              <span>Visible Only</span>
-              <span className={`text-[10px] font-mono ${matrixScope === "visible" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>
-                ({Math.min(activeConfirmedNodeLimit, activities.length)})
-              </span>
-            </button>
-          </div>
+      <div className="card bg-white z-depth-1 border border-slate-200 rounded-sm p-4 flex flex-col gap-3">
+        <div>
+          <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1 block">
+            Feasibility Scoring Matrix
+          </span>
+          <p className="text-xs text-slate-500 font-light mt-0.5">
+            Compare automation scores across rule-based criteria, single-shot LLM prompts, and 6-step agentic reasoning loops.
+          </p>
         </div>
         
-        {/* model summary stats - row below, side by side */}
+        {/* model summary stats - row below */}
         <div className="flex flex-row flex-wrap gap-x-8 gap-y-2 border-t border-slate-100 pt-3 text-[10px] text-slate-500 font-semibold">
           <div>Displayed Steps: <span className="text-slate-800 font-bold ml-1">{displayedActivities.length} / {activities.length}</span></div>
           <div>AI Models Stored: <span className="text-slate-800 font-bold ml-1">
-            {new Set(assessments.filter(a => a.type === "LLM_SINGLE_SHOT").map(a => a.model)).size}
+            {new Set(assessments.filter(a => a.type === "LLM_SINGLE_SHOT" || a.type === "LLM_AGENTIC").map(a => a.model)).size}
           </span></div>
           {totalLlmCostUsd > 0 && (
             <div>Total LLM Cost: <span className="text-slate-800 font-bold ml-1">{formatCost(totalLlmCostUsd, null)}</span></div>
@@ -108,6 +63,84 @@ export default function FeasibilityMatrix({
       </div>
 
       <div className="overflow-x-auto border border-slate-200 rounded-sm bg-white z-depth-1">
+        {/* Integrated Table Header Filter Strip */}
+        <div className={`bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex ${isExpanded ? "flex-row items-center justify-between" : "flex-col items-start"} gap-2.5 flex-wrap`}>
+          {/* Left: Evaluation Mode Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap max-w-full">
+            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Mode:</span>
+            <div className="flex flex-wrap bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
+              <button
+                type="button"
+                onClick={() => setMatrixTypeFilter("ALL")}
+                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                  matrixTypeFilter === "ALL"
+                    ? "bg-white text-teal-800 font-bold shadow-2xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                All Evaluations
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatrixTypeFilter("LLM_SINGLE_SHOT")}
+                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                  matrixTypeFilter === "LLM_SINGLE_SHOT"
+                    ? "bg-white text-teal-800 font-bold shadow-2xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Single-Shot
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatrixTypeFilter("LLM_AGENTIC")}
+                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                  matrixTypeFilter === "LLM_AGENTIC"
+                    ? "bg-purple-600 text-white font-bold shadow-2xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Agentic (6-Step)
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Activity Scope Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap max-w-full">
+            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Scope:</span>
+            <div className="flex flex-wrap bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
+              <button
+                type="button"
+                onClick={() => setMatrixScope("all")}
+                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 flex items-center gap-1 ${
+                  matrixScope === "all"
+                    ? "bg-white text-teal-800 font-bold shadow-2xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>All Activities</span>
+                <span className={`text-[10px] font-mono ${matrixScope === "all" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>
+                  ({activities.length})
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatrixScope("visible")}
+                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 flex items-center gap-1 ${
+                  matrixScope === "visible"
+                    ? "bg-white text-teal-800 font-bold shadow-2xs"
+                    : "bg-transparent text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>Visible Only</span>
+                <span className={`text-[10px] font-mono ${matrixScope === "visible" ? "text-teal-600 font-semibold" : "text-slate-400"}`}>
+                  ({Math.min(activeConfirmedNodeLimit, activities.length)})
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <table className="striped highlight text-xs">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
@@ -137,9 +170,15 @@ export default function FeasibilityMatrix({
               const activeScores: number[] = [];
               
               SUPPORTED_MODELS.forEach((model) => {
-                const asm = assessments.find(
-                  (a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id
-                );
+                let asm = null;
+                if (matrixTypeFilter === "LLM_SINGLE_SHOT") {
+                  asm = assessments.find((a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id);
+                } else if (matrixTypeFilter === "LLM_AGENTIC") {
+                  asm = assessments.find((a) => a.activityId === act.id && a.type === "LLM_AGENTIC" && a.model === model.id);
+                } else {
+                  asm = assessments.find((a) => a.activityId === act.id && a.type === "LLM_AGENTIC" && a.model === model.id)
+                    || assessments.find((a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id);
+                }
                 modelAssessments[model.id] = asm;
                 if (asm) {
                   activeScores.push(asm.score);
@@ -189,12 +228,19 @@ export default function FeasibilityMatrix({
                     return (
                       <td key={model.id} className="py-3 px-4 text-center border-l border-slate-200">
                         {score !== null ? (
-                          <span 
-                            title={`Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
-                            className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
-                          >
-                            {score}%
-                          </span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span 
+                              title={`[${asm.type === "LLM_AGENTIC" ? "6-Step Agentic" : "Single-Shot"}] Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
+                              className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
+                            >
+                              {score}%
+                            </span>
+                            {asm.type === "LLM_AGENTIC" && (
+                              <span className="text-[7px] font-bold text-purple-700 bg-purple-100 px-1 py-0.2 rounded uppercase">
+                                Agentic
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-slate-400 font-normal">—</span>
                         )}
