@@ -158,7 +158,42 @@ export default function ActivityDetailsPanel({
                 </span>
                 <span className="text-slate-500 text-[9px] lowercase font-normal">{step.type}</span>
               </div>
-              <p className="text-slate-900 font-medium leading-relaxed whitespace-pre-wrap block text-[11px]">{step.content}</p>
+              {(() => {
+                if (step.content.includes("Hypothesis:") || step.content.includes("Self Critique:")) {
+                  const parts = step.content.split(/\n?Self Critique:\s*/);
+                  const hypothesisText = parts[0]?.replace(/^Hypothesis:\s*/i, "").trim();
+                  const critiqueText = parts[1]?.trim();
+
+                  return (
+                    <div className="space-y-1.5 mt-1">
+                      {hypothesisText && (
+                        <div className="bg-indigo-50/70 border border-indigo-200/80 p-2.5 rounded-sm text-indigo-950 text-[11px] leading-relaxed">
+                          <span className="inline-block bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider mr-2 shadow-xs">
+                            Hypothesis
+                          </span>
+                          <span className="font-medium text-slate-800">{hypothesisText}</span>
+                        </div>
+                      )}
+                      {critiqueText && (
+                        <div className="bg-amber-50/70 border border-amber-200/80 p-2.5 rounded-sm text-amber-950 text-[11px] leading-relaxed">
+                          <span className="inline-block bg-amber-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider mr-2 shadow-xs">
+                            Self Critique
+                          </span>
+                          <span className="font-medium text-slate-800">{critiqueText}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (step.type === "critique" && step.details?.reevaluationCount) {
+                  return null;
+                }
+
+                return (
+                  <p className="text-slate-900 font-medium leading-relaxed whitespace-pre-wrap block text-[11px]">{step.content}</p>
+                );
+              })()}
 
               {step.type === "hypothesis" && step.details && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px]">
@@ -285,19 +320,49 @@ export default function ActivityDetailsPanel({
               )}
 
               {step.type === "critique" && step.details && (
-                <div className="mt-2 bg-pink-50 p-2 rounded-sm text-[10px] text-pink-950 border border-pink-200 space-y-1 font-mono">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-pink-950">Adversarial Self-Critique & Verification</span>
-                    <span className="bg-pink-700 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-bold">
-                      {step.details.proposedScore !== step.details.calibratedScore
-                        ? `Calibrated: ${step.details.proposedScore}% → ${step.details.calibratedScore}%`
-                        : `Verified: ${step.details.calibratedScore}%`}
-                    </span>
+                step.details.reevaluationCount ? (
+                  /* Loop Re-Entry Critique Step */
+                  <div className="mt-2 bg-violet-50/90 p-2.5 rounded-sm text-[10px] text-violet-950 border border-violet-200/90 space-y-2 shadow-xs font-sans">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-violet-900 text-[10.5px]">
+                        <svg className="w-3.5 h-3.5 text-violet-600 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Critique Loop Re-Entry (Iteration #{step.details.reevaluationCount})</span>
+                      </div>
+                      <span className="bg-violet-600 text-white text-[8.5px] px-2 py-0.5 rounded uppercase font-bold tracking-wider shadow-xs">
+                        Re-Inspecting via {step.details.suggestedTool}
+                      </span>
+                    </div>
+                    {(step.details.critiqueNotes || step.content) && (
+                      <div className="bg-white/80 border-l-2 border-violet-500 p-2 rounded-r-xs text-[10.5px] leading-relaxed">
+                        <div className="text-[9px] uppercase font-bold text-violet-900 tracking-wider mb-0.5">Verification Audit Rationale:</div>
+                        <p className="text-slate-800 font-medium font-sans">
+                          {(step.details.critiqueNotes || step.content)
+                            .replace(/^(Red Team Auditor|Verification Audit)\s+(identified missing proof|requested tool):\s*"?/i, "")
+                            .replace(/"?\.\s*Re-entering loop to execute tool:.*$/i, "")}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-[9.5px] text-slate-700">
-                    Final Calibration: <strong className="text-pink-950">{step.details.calibratedScore}% ({step.details.calibratedLabel})</strong>
+                ) : (
+                  /* Final Adversarial Calibration Audit Step */
+                  <div className="mt-2 bg-pink-50/90 p-2.5 rounded-sm text-[10px] text-pink-950 border border-pink-200/90 space-y-1 shadow-xs font-mono">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-pink-950">Quality Oversight & Verification Audit</span>
+                      <span className="bg-pink-700 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-bold">
+                        {step.details.proposedScore !== step.details.calibratedScore
+                          ? `Calibrated: ${step.details.proposedScore}% → ${step.details.calibratedScore}%`
+                          : `Verified: ${step.details.calibratedScore}%`}
+                      </span>
+                    </div>
+                    {step.details.calibratedScore !== undefined && (
+                      <div className="text-[9.5px] text-slate-700">
+                        Final Calibrated Score: <strong className="text-pink-950">{step.details.calibratedScore}% ({step.details.calibratedLabel})</strong>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )
               )}
             </div>
           ))}

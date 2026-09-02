@@ -52,18 +52,17 @@ export async function callOpenRouter(
   }
 
   let responseFormat: ResponseFormatOption | undefined;
-  let temperature = 0.1; // Default to 0.1 for predictable, reproducible assessment scores
-  let seed: number | undefined;
+  let temperature = 0.0; // Set temperature to 0.0 (greedy decoding) for 100% deterministic assessment scores
+  let seed: number | undefined = 42; // Fixed seed for identical batch vs single activity evaluations
 
   if (optionsOrFormat) {
     if ("type" in optionsOrFormat) {
       responseFormat = optionsOrFormat as ResponseFormatOption;
-      temperature = legacyTemperature;
     } else {
       const opts = optionsOrFormat as OpenRouterOptions;
       responseFormat = opts.responseFormat;
-      temperature = opts.temperature ?? 0.1;
-      seed = opts.seed;
+      if (opts.temperature !== undefined) temperature = opts.temperature;
+      if (opts.seed !== undefined) seed = opts.seed;
     }
   }
 
