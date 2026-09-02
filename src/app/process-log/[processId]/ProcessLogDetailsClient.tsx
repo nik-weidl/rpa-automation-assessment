@@ -46,9 +46,9 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [activeConfirmedNodeLimit, setActiveConfirmedNodeLimit] = useState<number>(20);
   const [nodeLimit, setNodeLimit] = useState<number>(20);
   const [sliderDensity, setSliderDensity] = useState<number>(20);
-  const [evalType, setEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_SINGLE_SHOT");
-  const [graphEvalType, setGraphEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_SINGLE_SHOT");
-  const [batchEvalType, setBatchEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_SINGLE_SHOT");
+  const [evalType, setEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
+  const [graphEvalType, setGraphEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
+  const [batchEvalType, setBatchEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [liveThinkingTrace, setLiveThinkingTrace] = useState<any[]>([]);
   useEffect(() => {
     setActiveConfirmedNodeLimit(20);

@@ -40,6 +40,130 @@ export default function UploadPage() {
     }
   };
 
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [parsingMessage, setParsingMessage] = useState("Preparing upload...");
+  const [uploadDetails, setUploadDetails] = useState<{
+    loadedBytes: number;
+    totalBytes: number;
+    uploadSpeedMb: number;
+    stage: "UPLOADING" | "PARSING";
+  } | null>(null);
+
+  const uploadWithXhr = (formData: FormData, fileSize: number): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const startTime = Date.now();
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.min(99, Math.round((event.loaded / event.total) * 100));
+          const elapsedTimeSecs = (Date.now() - startTime) / 1000;
+          const loadedMb = event.loaded / (1024 * 1024);
+          const uploadSpeedMb = elapsedTimeSecs > 0 ? loadedMb / elapsedTimeSecs : 0;
+
+          setUploadProgress(percentComplete);
+          setParsingMessage(`Uploading file: ${(event.loaded / (1024 * 1024)).toFixed(1)} MB / ${(event.total / (1024 * 1024)).toFixed(1)} MB`);
+          setUploadDetails({
+            loadedBytes: event.loaded,
+            totalBytes: event.total,
+            uploadSpeedMb,
+            stage: "UPLOADING",
+          });
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const res = JSON.parse(xhr.responseText);
+            resolve(res);
+          } catch (e) {
+            reject(new Error("Failed to parse server response"));
+          }
+        } else {
+          try {
+            const res = JSON.parse(xhr.responseText);
+            reject(new Error(res.error || `Upload failed (Status ${xhr.status})`));
+          } catch {
+            reject(new Error(`Upload failed (Status ${xhr.status})`));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during file upload"));
+      xhr.ontimeout = () => reject(new Error("Upload request timed out (10 min limit exceeded)"));
+
+      xhr.open("POST", "/api/upload/stream");
+      xhr.timeout = 600000; // 10 minutes timeout for huge 200MB+ file uploads
+      xhr.send(formData);
+    });
+  };
+
+  const uploadWithStream = async (file: File, processName: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("processName", processName);
+
+    setParsingMessage("Initiating streaming upload...");
+
+    const response = await fetch("/api/upload/stream", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Failed to initiate processing stream");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completedData: any = null;
+
+    setUploadDetails({
+      loadedBytes: file.size,
+      totalBytes: file.size,
+      uploadSpeedMb: 0,
+      stage: "PARSING",
+    });
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ")) {
+          try {
+            const event = JSON.parse(trimmed.replace(/^data:\s*/, ""));
+            if (event.type === "progress") {
+              setUploadProgress(event.percent);
+              setParsingMessage(event.message);
+            } else if (event.type === "complete") {
+              completedData = event.data;
+            } else if (event.type === "error") {
+              throw new Error(event.error);
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes("JSON")) {
+              throw parseErr;
+            }
+          }
+        }
+      }
+    }
+
+    if (!completedData) {
+      throw new Error("Upload processing completed without log data");
+    }
+
+    return completedData;
+  };
+
   const handleFiles = async (files: FileList) => {
     const file = files[0];
 
@@ -56,25 +180,15 @@ export default function UploadPage() {
     setError(null);
     setSuccess(null);
     setIsUploading(true);
+    setUploadProgress(0);
+    setUploadDetails(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("processName", file.name.replace(".xes", ""));
+      const processName = file.name.replace(".xes", "");
+      const resultData = await uploadWithStream(file, processName);
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "Upload failed");
-      }
-
-      setSuccess(`Process "${result.data.name}" uploaded successfully!`);
-      setUploadedLogs([result.data, ...uploadedLogs]);
+      setSuccess(`Process "${resultData.name}" uploaded and parsed successfully!`);
+      setUploadedLogs([resultData, ...uploadedLogs]);
 
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -85,6 +199,7 @@ export default function UploadPage() {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setIsUploading(false);
+      setUploadDetails(null);
     }
   };
 
@@ -232,26 +347,36 @@ export default function UploadPage() {
                 <p className="grey-text text-darken-1 font-light text-xs" style={{ margin: 0 }}>or click to browse local files (max 500MB)</p>
 
                 {isUploading && (
-                  <div 
-                    className="teal lighten-5 teal-text text-darken-3 font-semibold uppercase tracking-wider text-xs"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 16px",
-                      marginTop: "20px",
-                      borderRadius: "2px",
-                      border: "1px solid #b2dfdb"
-                    }}
-                  >
-                    <div className="preloader-wrapper small active" style={{ width: "16px", height: "16px" }}>
-                      <div className="spinner-layer stroke-teal">
-                        <div className="circle-clipper left"><div className="circle"></div></div>
-                        <div className="gap-patch"><div className="circle"></div></div>
-                        <div className="circle-clipper right"><div className="circle"></div></div>
-                      </div>
+                  <div className="mt-5 w-full max-w-lg mx-auto text-left bg-white border border-teal-200 p-4 rounded-sm shadow-sm space-y-2.5 cursor-default" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
+                      <span className="flex items-center gap-2">
+                        <div className="preloader-wrapper small active" style={{ width: "16px", height: "16px" }}>
+                          <div className="spinner-layer stroke-teal">
+                            <div className="circle-clipper left"><div className="circle"></div></div>
+                          </div>
+                        </div>
+                        <span className="text-teal-800 font-bold uppercase tracking-wider text-[11px]">
+                          {uploadProgress < 100 ? `Processing Log (${uploadProgress}%)` : "Finalizing..."}
+                        </span>
+                      </span>
+                      <span className="font-mono text-teal-700 text-[11px] font-bold">
+                        {uploadProgress}%
+                      </span>
                     </div>
-                    <span>Uploading and parsing event logs...</span>
+
+                    {/* Progress Bar Track */}
+                    <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200 shadow-inner">
+                      <div
+                        className="h-full bg-teal-600 transition-all duration-300 shadow-xs"
+                        style={{ width: `${Math.max(3, uploadProgress)}%` }}
+                      ></div>
+                    </div>
+
+                    {/* Live Server Parsing Status Message */}
+                    <div className="flex items-center justify-between text-[11px] text-slate-700 font-mono pt-0.5">
+                      <span className="font-medium text-slate-750">{parsingMessage}</span>
+                      <span className="text-slate-400 font-semibold">{uploadProgress === 100 ? "Done!" : "In Progress..."}</span>
+                    </div>
                   </div>
                 )}
               </div>

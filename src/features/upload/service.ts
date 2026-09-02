@@ -11,7 +11,12 @@ export async function ensureUploadsDir() {
   await fs.mkdir(UPLOADS_DIR, { recursive: true });
 }
 
-export async function uploadXESFile(formData: FormData): Promise<{ processLog: ProcessLog; filePath: string }> {
+export type UploadProgressCallback = (stage: string, percent: number, message: string) => void;
+
+export async function uploadXESFile(
+  formData: FormData,
+  onProgress?: UploadProgressCallback
+): Promise<{ processLog: ProcessLog; filePath: string }> {
   await ensureUploadsDir();
 
   const file = formData.get("file") as File;
@@ -37,6 +42,8 @@ export async function uploadXESFile(formData: FormData): Promise<{ processLog: P
     throw new Error("Process name is required");
   }
 
+  onProgress?.("SAVING", 10, "Writing file buffer to disk...");
+
   // save file to disk
   const timestamp = Date.now();
   const sanitizedName = processName.replace(/[^a-z0-9-]/gi, "_").substring(0, 50);
@@ -45,6 +52,8 @@ export async function uploadXESFile(formData: FormData): Promise<{ processLog: P
 
   const fileBuffer = await file.arrayBuffer();
   await fs.writeFile(filePath, Buffer.from(fileBuffer));
+
+  onProgress?.("PENDING_DB", 25, "Creating pending process log entry in database...");
 
   // create ProcessLog in database with initial pending state
   const processLog = await prisma.processLog.create({
@@ -58,15 +67,20 @@ export async function uploadXESFile(formData: FormData): Promise<{ processLog: P
   });
 
   try {
+    onProgress?.("PARSING_XML", 45, `Parsing XML event log traces via PM4JS...`);
     const parsedLog = await parseXesFile(fileName);
     
+    onProgress?.("BUILDING_PROFILES", 75, `Ingesting ${parsedLog.traces.length} process traces and computing activity metrics...`);
     const { calculateAndStoreActivityProfiles } = await import("@/features/activity-profiles/service");
     await calculateAndStoreActivityProfiles(processLog.id, parsedLog);
 
+    onProgress?.("FINALIZING", 95, "Calculating Rule-Based scores and finalizing process log...");
     const readyLog = await prisma.processLog.update({
       where: { id: processLog.id },
       data: { status: "READY" },
     });
+
+    onProgress?.("COMPLETE", 100, "Processing complete!");
 
     return { processLog: readyLog, filePath };
   } catch (error) {
