@@ -1,7 +1,8 @@
 import { Activity, Assessment } from "@/types/models";
 import { SUPPORTED_MODELS } from "@/features/automation-scoring/openrouter";
 import { MetricTooltip } from "@/components/ui/MetricTooltip";
-import { Clock, Users, ArrowRightLeft, Sparkles, AlertTriangle, HelpCircle, Loader2 } from "lucide-react";
+import { Clock, Users, ArrowRightLeft, Sparkles, AlertTriangle, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 interface ActivityDetailsPanelProps {
   selectedActivity: string | null;
@@ -46,52 +47,256 @@ export default function ActivityDetailsPanel({
   formatCost,
   getSubScores,
 }: ActivityDetailsPanelProps) {
+  const getRawResponseObject = (assessment: Assessment | null) => {
+    if (!assessment || !assessment.rawResponse) return null;
+    if (typeof assessment.rawResponse === "object") return assessment.rawResponse as any;
+    if (typeof assessment.rawResponse === "string") {
+      try {
+        return JSON.parse(assessment.rawResponse);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const rawObj = getRawResponseObject(llmAssessment);
   const activeTrace = (evaluating && liveThinkingTrace && liveThinkingTrace.length > 0)
     ? liveThinkingTrace
-    : (llmAssessment?.rawResponse as any)?.thinkingTrace;
+    : rawObj?.thinkingTrace;
   const isLiveTrace = evaluating && liveThinkingTrace && liveThinkingTrace.length > 0;
 
+  const traceContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeTrace && activeTrace.length > 0) {
+      traceContainerRef.current?.scrollTo({
+        top: traceContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [activeTrace?.length]);
+
   const renderThinkingTrace = (traceSteps: any[], isLive: boolean = false) => {
-    if (!traceSteps || traceSteps.length === 0) return null;
+    if (evaluating && (!traceSteps || traceSteps.length === 0)) {
+      return (
+        <div className="bg-slate-50 p-4 rounded-sm space-y-3 font-mono text-xs border border-slate-200 shadow-sm text-slate-800">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2 text-[10px] uppercase font-bold tracking-wider text-purple-700">
+            <div className="flex items-center gap-1.5">
+              <i className="material-icons text-sm text-purple-700" style={{ fontSize: "16px" }}>psychology</i>
+              <span>Agent Thinking Trace (Live Execution Stream)</span>
+              <span className="flex items-center gap-1 text-purple-600 ml-2 animate-pulse font-normal">
+                <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                <span>Initializing Agentic Loop...</span>
+              </span>
+            </div>
+            <span className="text-slate-500 text-[9px]">Connecting Stream...</span>
+          </div>
+          <div className="p-4 bg-white rounded-sm border border-slate-200 text-center space-y-2">
+            <div className="flex items-center justify-center gap-2 text-purple-700 font-semibold text-xs animate-pulse">
+              <Sparkles className="w-4 h-4 text-purple-600" />
+              <span>Agent is formulating Turn 1 hypothesis & selecting tools...</span>
+            </div>
+            <p className="text-[10px] text-slate-500">Analyzing process metrics, trace variants, and graph connections...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!traceSteps || traceSteps.length === 0) {
+      if (evalType === "LLM_AGENTIC" || llmAssessment?.type === "LLM_AGENTIC") {
+        return (
+          <div className="bg-slate-50 p-4 rounded-sm space-y-3 font-mono text-xs border border-slate-200 shadow-sm text-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2 text-[10px] uppercase font-bold tracking-wider text-purple-700">
+              <div className="flex items-center gap-1.5">
+                <i className="material-icons text-sm text-purple-700" style={{ fontSize: "16px" }}>psychology</i>
+                <span>Agent Thinking Trace (Dynamic Agentic Trajectory)</span>
+              </div>
+              <span className="text-slate-500 text-[9px]">Ready for Evaluation</span>
+            </div>
+            <div className="p-4 bg-white rounded-sm border border-slate-200 text-center space-y-2">
+              <p className="text-[11px] text-slate-700 font-medium">No agentic thinking trace recorded for this selection yet.</p>
+              <p className="text-[10px] text-slate-500">Click <strong>&quot;Run LLM Agent Evaluation&quot;</strong> below to launch the dynamic multi-turn agentic evaluation loop.</p>
+            </div>
+          </div>
+        );
+      }
+      return null;
+    }
+
     return (
-      <div className="card bg-slate-900 text-slate-100 p-4 rounded-sm space-y-3 font-mono text-xs border border-slate-700 shadow-inner">
-        <div className="flex items-center justify-between border-b border-slate-700 pb-2 text-[10px] uppercase font-bold tracking-wider text-teal-400">
+      <div className="bg-slate-50 p-4 rounded-sm space-y-3 font-mono text-xs border border-slate-200 shadow-sm text-slate-800">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-2 text-[10px] uppercase font-bold tracking-wider text-purple-700">
           <div className="flex items-center gap-1.5">
-            <i className="material-icons text-sm text-teal-400" style={{ fontSize: "16px" }}>psychology</i>
-            <span>Agent Thinking Trace (Chain-of-Thought)</span>
+            <i className="material-icons text-sm text-purple-700" style={{ fontSize: "16px" }}>psychology</i>
+            <span>Agent Thinking Trace (Live Execution Stream)</span>
             {isLive && (
-              <span className="flex items-center gap-1 text-purple-400 ml-2 animate-pulse font-normal">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Streaming Steps Live...</span>
+              <span className="flex items-center gap-1 text-purple-600 ml-2 animate-pulse font-normal">
+                <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                <span>Streaming Agent Steps...</span>
               </span>
             )}
           </div>
-          <span className="text-slate-400 text-[9px]">
-            {isLive ? `${traceSteps.length} Steps Received` : "6-Step Deep Execution"}
+          <span className="text-slate-500 text-[9px]">
+            {isLive ? `${traceSteps.length} Steps Received` : "Dynamic Agentic Trajectory"}
           </span>
         </div>
 
-        <div className="space-y-2.5">
+        <div
+          ref={traceContainerRef}
+          className="max-h-[380px] overflow-y-auto pr-1 space-y-2.5 scroll-smooth"
+        >
           {traceSteps.map((step: any, idx: number) => (
-            <div key={idx} className="space-y-1 bg-slate-800/80 p-2.5 rounded-sm border border-slate-700/60 text-[11px] transition-all duration-200">
-              <div className="flex items-center justify-between text-teal-300 font-semibold text-[10px] uppercase tracking-wide">
+            <div
+              key={idx}
+              className="space-y-1.5 bg-white p-3 rounded-sm border border-slate-250 text-[11px] shadow-sm transition-all duration-200"
+            >
+              <div className="flex items-center justify-between text-purple-800 font-bold text-[10px] uppercase tracking-wide">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
-                  <span>Step {idx + 1}: {step.title}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-600"></span>
+                  <span>{step.title.replace(/^Turn\s+\d+:\s*/i, "")}</span>
                 </span>
-                <span className="text-slate-400 text-[9px] lowercase font-normal">{step.type}</span>
+                <span className="text-slate-500 text-[9px] lowercase font-normal">{step.type}</span>
               </div>
-              <p className="text-slate-200 font-light leading-relaxed whitespace-pre-wrap">{step.content}</p>
+              <p className="text-slate-900 font-medium leading-relaxed whitespace-pre-wrap block text-[11px]">{step.content}</p>
+
+              {step.type === "hypothesis" && step.details && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px]">
+                  {step.details.confidenceScore !== undefined && (
+                    <span className="bg-purple-100 text-purple-900 px-2 py-0.5 rounded border border-purple-300 font-bold">
+                      Confidence: {step.details.confidenceScore}%
+                    </span>
+                  )}
+                  {step.details.selectedTool && (
+                    <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-300 font-bold">
+                      Selected Tool: {step.details.selectedTool}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {step.type === "retrieval" && step.details && (
-                <div className="mt-2 bg-slate-950 p-2 rounded text-[10px] text-teal-200 border border-slate-800 space-y-1">
-                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Retrieved Tool Metrics:</div>
+                <div className="mt-2 bg-slate-100 p-2 rounded-sm text-[10px] text-slate-800 border border-slate-200 space-y-1">
+                  <div className="text-[9px] uppercase font-bold text-slate-600 tracking-wider">Retrieved Tool Metrics:</div>
                   {Object.entries(step.details).map(([k, metric]: [string, any]) => (
                     <div key={k} className="flex items-center justify-between">
-                      <span className="text-slate-400 font-mono">{k}:</span>
-                      <span className="font-semibold text-teal-300">{metric.description || metric.value}</span>
+                      <span className="text-slate-600 font-mono">{k}:</span>
+                      <span className="font-semibold text-purple-900">{metric.description || metric.value}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {step.type === "neighbors" && step.details && (
+                <div className="mt-2 bg-slate-100 p-2 rounded-sm text-[10px] text-slate-800 border border-slate-200 space-y-1">
+                  <div className="text-[9px] uppercase font-bold text-slate-600 tracking-wider">Inspected Process Graph Context:</div>
+                  {step.details.predecessors && step.details.predecessors.length > 0 && (
+                    <div>
+                      <span className="text-slate-600">Predecessors:</span>{" "}
+                      <span className="text-slate-900 font-medium">{step.details.predecessors.map((p: any) => `"${p.name}" (${p.avgDuration}, ${p.resourceCount} actors)`).join("; ")}</span>
+                    </div>
+                  )}
+                  {step.details.successors && step.details.successors.length > 0 && (
+                    <div>
+                      <span className="text-slate-600">Successors:</span>{" "}
+                      <span className="text-slate-900 font-medium">{step.details.successors.map((s: any) => `"${s.name}" (${s.avgDuration}, ${s.resourceCount} actors)`).join("; ")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step.type === "archetype" && step.details && (
+                <div className="mt-2 bg-purple-50 p-2 rounded-sm text-[10px] text-purple-900 border border-purple-200 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-purple-950">{step.details.rpaArchetypeLabel} ({step.details.rpaArchetype})</span>
+                    <span className="bg-purple-200 text-purple-900 text-[8px] px-1.5 py-0.5 rounded uppercase font-bold">Effort: {step.details.implementationEffort}</span>
+                  </div>
+                  {step.details.effortRationale && <p className="text-slate-700 font-sans text-[10px]">{step.details.effortRationale}</p>}
+                </div>
+              )}
+
+              {step.type === "variants" && step.details && (
+                <div className="mt-2 bg-blue-50 p-2 rounded-sm text-[10px] text-blue-950 border border-blue-200 space-y-1 font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-950">Process Variant & Happy Path Inspection</span>
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${step.details.isOnHappyPath ? "bg-teal-600" : "bg-orange-600"}`}>
+                      {step.details.isOnHappyPath ? "Happy Path" : "Branch Variant"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-[9.5px] text-slate-700">
+                    <div>Variants with Activity: <strong className="text-blue-950">{step.details.activityVariantCount} / {step.details.totalProcessVariants}</strong></div>
+                    <div>Happy Path Case Share: <strong className="text-blue-950">{step.details.happyPathCoverage}</strong></div>
+                  </div>
+                </div>
+              )}
+
+              {step.type === "rework" && step.details && (
+                <div className="mt-2 bg-orange-50 p-2 rounded-sm text-[10px] text-orange-950 border border-orange-200 space-y-1 font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-orange-950">Process Rework & Self-Loop Analysis</span>
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${step.details.reworkSeverity === "HIGH" ? "bg-pink-600" : step.details.reworkSeverity === "MEDIUM" ? "bg-orange-600" : "bg-teal-600"}`}>
+                      Rework: {step.details.reworkSeverity}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-[9.5px] text-slate-700">
+                    <div>Rework Cases: <strong className="text-orange-950">{step.details.reworkCaseCount} ({step.details.reworkPercentage})</strong></div>
+                    <div>Max Loop Repetitions: <strong className="text-orange-950">{step.details.maxExecutionsInSingleCase}x / case</strong></div>
+                  </div>
+                </div>
+              )}
+
+              {step.type === "roi" && step.details && (
+                <div className="mt-2 bg-teal-50 p-2 rounded-sm text-[10px] text-teal-950 border border-teal-200 space-y-1 font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-teal-950">Financial ROI & Payback Simulation</span>
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${step.details.roiTier === "HIGH_ROI" ? "bg-teal-600" : step.details.roiTier === "MODERATE_ROI" ? "bg-orange-600" : "bg-slate-600"}`}>
+                      {step.details.roiTier}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-[9.5px] text-slate-700">
+                    <div>Annual Hours Spent: <strong className="text-teal-950">{step.details.totalAnnualHoursSpent} hrs/yr</strong></div>
+                    <div>Annual Labor Cost: <strong className="text-teal-950">${step.details.annualLaborCostUsd?.toLocaleString()}</strong></div>
+                    <div>Build Cost Est: <strong className="text-teal-950">${step.details.implementationCostEstUsd?.toLocaleString()}</strong></div>
+                    <div>Est Payback Period: <strong className="text-teal-950">{step.details.estimatedPaybackMonths} mos</strong></div>
+                  </div>
+                </div>
+              )}
+
+              {step.type === "synthesis" && step.details && (
+                <div className="mt-2 bg-purple-50 p-2 rounded-sm text-[10px] text-purple-950 border border-purple-200 space-y-1 font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-purple-950">
+                      Score: {step.details.finalScore}% ({step.details.finalLabel})
+                    </span>
+                    {step.details.implementationEffort && (
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${
+                        step.details.implementationEffort === "LOW" ? "bg-teal-600" : step.details.implementationEffort === "MEDIUM" ? "bg-orange-600" : "bg-pink-600"
+                      }`}>
+                        Effort: {step.details.implementationEffort}
+                      </span>
+                    )}
+                  </div>
+                  {step.details.rpaArchetypeLabel && (
+                    <div className="text-[9.5px] text-slate-700">
+                      Archetype: <strong className="text-purple-950">{step.details.rpaArchetypeLabel}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step.type === "critique" && step.details && (
+                <div className="mt-2 bg-pink-50 p-2 rounded-sm text-[10px] text-pink-950 border border-pink-200 space-y-1 font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-pink-950">Adversarial Self-Critique & Verification</span>
+                    <span className="bg-pink-700 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-bold">
+                      {step.details.proposedScore !== step.details.calibratedScore
+                        ? `Calibrated: ${step.details.proposedScore}% → ${step.details.calibratedScore}%`
+                        : `Verified: ${step.details.calibratedScore}%`}
+                    </span>
+                  </div>
+                  <div className="text-[9.5px] text-slate-700">
+                    Final Calibration: <strong className="text-pink-950">{step.details.calibratedScore}% ({step.details.calibratedLabel})</strong>
+                  </div>
                 </div>
               )}
             </div>
@@ -446,12 +651,30 @@ export default function ActivityDetailsPanel({
                             </span>
                           )}
                           <span className="bg-purple-600 text-white text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider shadow-xs">
-                            6-Step Agentic Loop
+                            Dynamic Agentic Loop
                           </span>
                         </div>
                       )}
                     </div>
-                    <p className="font-light leading-relaxed">{llmAssessment.reasoning}</p>
+                    {(() => {
+                      const reasoningParts = llmAssessment.reasoning ? llmAssessment.reasoning.split(/\[Adversarial Verification Audit\]:\s*/) : ["", ""];
+                      const mainReasoningText = reasoningParts[0].trim();
+                      const auditText = reasoningParts[1] ? reasoningParts[1].trim() : null;
+                      return (
+                        <>
+                          <p className="font-light leading-relaxed whitespace-pre-wrap">{mainReasoningText}</p>
+                          {auditText && (
+                            <div className="mt-3 bg-pink-50 border border-pink-200 p-3 rounded-sm text-slate-800 text-xs space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] text-pink-800">
+                                <ShieldCheck className="w-3.5 h-3.5 text-pink-700" />
+                                <span>Adversarial Verification Audit</span>
+                              </div>
+                              <p className="font-normal text-slate-700 text-[11px] leading-relaxed">{auditText}</p>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     {(llmAssessment.rawResponse as any)?.effortRationale && (
                       <div className="text-[10px] text-slate-500 font-mono border-t border-teal-100 pt-2 flex justify-between">
