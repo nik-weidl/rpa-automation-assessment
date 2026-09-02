@@ -30,6 +30,12 @@ export type ResponseFormatOption =
       };
     };
 
+export interface OpenRouterOptions {
+  responseFormat?: ResponseFormatOption;
+  temperature?: number;
+  seed?: number;
+}
+
 /**
  * calls OpenRouter API to fetch completion results with cost and latency tracking
  */
@@ -37,11 +43,28 @@ export async function callOpenRouter(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  responseFormat?: ResponseFormatOption
+  optionsOrFormat?: ResponseFormatOption | OpenRouterOptions,
+  legacyTemperature: number = 0.1
 ): Promise<OpenRouterResponse> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("missing OpenRouter API key. please configure OPENROUTER_API_KEY in your env.");
+  }
+
+  let responseFormat: ResponseFormatOption | undefined;
+  let temperature = 0.1; // Default to 0.1 for predictable, reproducible assessment scores
+  let seed: number | undefined;
+
+  if (optionsOrFormat) {
+    if ("type" in optionsOrFormat) {
+      responseFormat = optionsOrFormat as ResponseFormatOption;
+      temperature = legacyTemperature;
+    } else {
+      const opts = optionsOrFormat as OpenRouterOptions;
+      responseFormat = opts.responseFormat;
+      temperature = opts.temperature ?? 0.1;
+      seed = opts.seed;
+    }
   }
 
   const startTime = Date.now();
@@ -61,6 +84,8 @@ export async function callOpenRouter(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
+      temperature,
+      ...(seed !== undefined ? { seed } : {}),
       ...(responseFormat ? { response_format: responseFormat } : {}),
     }),
   });
