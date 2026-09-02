@@ -300,6 +300,27 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         const decoder = new TextDecoder();
         let buffer = "";
 
+        const pendingQueue: any[] = [];
+        let isProcessingQueue = false;
+
+        const processQueue = () => {
+          if (pendingQueue.length === 0) {
+            isProcessingQueue = false;
+            return;
+          }
+          isProcessingQueue = true;
+          const nextStep = pendingQueue.shift();
+          setLiveThinkingTrace((prev) => [...prev, nextStep]);
+          setTimeout(processQueue, 350);
+        };
+
+        const enqueueStep = (step: any) => {
+          pendingQueue.push(step);
+          if (!isProcessingQueue) {
+            processQueue();
+          }
+        };
+
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -314,7 +335,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
               try {
                 const eventData = JSON.parse(trimmed.replace(/^data:\s*/, ""));
                 if (eventData.type === "step") {
-                  setLiveThinkingTrace((prev) => [...prev, eventData.step]);
+                  enqueueStep(eventData.step);
                 } else if (eventData.type === "error") {
                   throw new Error(eventData.error);
                 }
@@ -323,6 +344,11 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
               }
             }
           }
+        }
+
+        // wait for queue to smoothly drain before finalizing UI state
+        while (pendingQueue.length > 0 || isProcessingQueue) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
         router.refresh();
@@ -770,7 +796,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                     }}
                   >
                     <option value="LLM_SINGLE_SHOT">Single-Shot LLM Overlay</option>
-                    <option value="LLM_AGENTIC">Agentic Loop (6-Step) Overlay</option>
+                    <option value="LLM_AGENTIC">Dynamic Agentic Loop Overlay</option>
                   </select>
 
                   <select
