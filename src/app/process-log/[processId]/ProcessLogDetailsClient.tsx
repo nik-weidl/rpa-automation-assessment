@@ -51,6 +51,10 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [graphEvalType, setGraphEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [batchEvalType, setBatchEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [liveThinkingTrace, setLiveThinkingTrace] = useState<any[]>([]);
+  const [densityInput, setDensityInput] = useState<string>(String(sliderDensity));
+  useEffect(() => {
+    setDensityInput(String(sliderDensity));
+  }, [sliderDensity]);
   useEffect(() => {
     const limit = Math.min(20, processLog.activities.length || 20);
     setActiveConfirmedNodeLimit(limit);
@@ -837,9 +841,43 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                       <span className="text-xs uppercase font-extrabold text-slate-500 tracking-wider">Node Density</span>
                       <span className="text-[10px] text-slate-400 font-semibold font-mono">({activeConfirmedNodeLimit} active on canvas)</span>
                     </div>
-                    <div className="flex items-baseline gap-1 bg-white px-3 py-1 rounded border border-slate-300 shadow-2xs">
-                      <span className="text-lg font-black text-teal-700 font-mono">{sliderDensity}</span>
-                      <span className="text-xs font-bold text-slate-500">/ {maxTotalActivities}</span>
+                    <div className="flex items-center whitespace-nowrap gap-1 bg-white px-2.5 py-1 rounded border border-slate-300 shadow-2xs">
+                      <input
+                        type="number"
+                        min={1}
+                        max={maxTotalActivities}
+                        value={densityInput}
+                        onChange={(e) => {
+                          const valStr = e.target.value;
+                          setDensityInput(valStr);
+                          if (valStr !== "") {
+                            const parsed = parseInt(valStr, 10);
+                            if (!isNaN(parsed) && parsed >= 1) {
+                              setSliderDensity(Math.min(maxTotalActivities, parsed));
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (densityInput === "" || isNaN(parseInt(densityInput, 10))) {
+                            setDensityInput(String(sliderDensity));
+                          } else {
+                            const val = Math.max(1, Math.min(maxTotalActivities, parseInt(densityInput, 10)));
+                            setSliderDensity(val);
+                            setDensityInput(String(val));
+                          }
+                        }}
+                        className="w-7 text-sm font-black text-teal-700 font-mono bg-transparent p-0 text-right no-spin leading-none"
+                        style={{
+                          border: "none",
+                          borderBottom: "none",
+                          boxShadow: "none",
+                          outline: "none",
+                          margin: 0,
+                          height: "auto",
+                          lineHeight: "1",
+                        }}
+                      />
+                      <span className="text-sm font-bold text-slate-500 font-mono leading-none">/ {maxTotalActivities}</span>
                     </div>
                   </div>
 

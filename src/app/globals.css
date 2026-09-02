@@ -136,3 +136,14 @@ nextjs-portal,
 [data-nextjs-toast] {
   display: none !important;
 }
+
+/* Hide number input spin buttons completely */
+.no-spin::-webkit-outer-spin-button,
+.no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+.no-spin {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
