@@ -1,5 +1,6 @@
-import fs from "fs/promises";
-import { XesEvent, XesLog } from "@/types/domain";
+import fs from "fs";
+import readline from "readline";
+import { XesEvent, XesLog, XesTrace } from "@/types/domain";
 
 declare global {
   var XesImporter: {
@@ -31,33 +32,22 @@ const UPLOADS_DIR = process.env.UPLOADS_DIR || "/tmp/uploads";
 async function ensurePm4jsImporter() {
   if (globalThis.XesImporter) return;
 
-  // try loading the library's init entry which wires up importers
   try {
-    // prefer the explicit init path to avoid directory import issues
-    // this will execute pm4js's initialization and register XesImporter on globalThis
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     await import("pm4js/init.js");
   } catch (e) {
-    // fallback: try importing the package entry and check for exported importer
     try {
       const pm = await import("pm4js");
-      // some builds may export under default
       const candidate = (pm as any).XesImporter || (pm as any).default?.XesImporter;
       if (candidate) {
         (globalThis as any).XesImporter = candidate;
       }
-    } catch (e2) {
-      // ignore — will handle below
-    }
-  }
-
-  if (!globalThis.XesImporter) {
-    throw new Error("PM4JS XES importer is unavailable after attempted imports");
+    } catch (e2) {}
   }
 }
 
-export async function parseXesFile(fileName: string): Promise<XesLog> {
-  const xml = await fs.readFile(`${UPLOADS_DIR}/${fileName}`, "utf-8");
+async function parseXesFileWithPm4js(fileName: string): Promise<XesLog> {
+  const filePath = `${UPLOADS_DIR}/${fileName}`;
+  const xml = await fs.promises.readFile(filePath, "utf-8");
   await ensurePm4jsImporter();
   const eventLog = globalThis.XesImporter.apply(xml) as Pm4jLog;
   const traces = Array.isArray(eventLog.traces)
@@ -80,6 +70,123 @@ export async function parseXesFile(fileName: string): Promise<XesLog> {
         : [],
     })),
   };
+}
+
+export async function parseXesFile(fileName: string): Promise<XesLog> {
+  const filePath = `${UPLOADS_DIR}/${fileName}`;
+  
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File not found: ${fileName}`);
+  }
+
+  try {
+    const fileStream = fs.createReadStream(filePath, { encoding: "utf-8" });
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    let logName = fileName;
+    const traces: XesTrace[] = [];
+
+    let currentTrace: XesTrace | null = null;
+    let currentEvent: XesEvent | null = null;
+    let inLogHeader = true;
+
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // 1. Log Name
+      if (inLogHeader && trimmed.includes('key="concept:name"')) {
+        const match = trimmed.match(/value="([^"]+)"/);
+        if (match) {
+          logName = match[1];
+          inLogHeader = false;
+        }
+      }
+
+      // 2. Start Trace
+      if (trimmed.startsWith("<trace")) {
+        inLogHeader = false;
+        currentTrace = {
+          caseId: "unknown",
+          events: [],
+        };
+        continue;
+      }
+
+      // 3. End Trace
+      if (trimmed.startsWith("</trace>")) {
+        if (currentTrace) {
+          traces.push(currentTrace);
+          currentTrace = null;
+        }
+        continue;
+      }
+
+      // 4. Case ID
+      if (currentTrace && !currentEvent) {
+        if (trimmed.includes('key="concept:name"') || trimmed.includes('key="id"')) {
+          const match = trimmed.match(/value="([^"]+)"/);
+          if (match && currentTrace.caseId === "unknown") {
+            currentTrace.caseId = match[1];
+          }
+        }
+      }
+
+      // 5. Start Event
+      if (currentTrace && trimmed.startsWith("<event")) {
+        currentEvent = {
+          activity: "",
+          resource: undefined,
+          timestamp: new Date(),
+          attributes: {},
+        };
+        continue;
+      }
+
+      // 6. End Event
+      if (currentTrace && currentEvent && trimmed.startsWith("</event>")) {
+        if (currentEvent.activity) {
+          currentTrace.events.push(currentEvent);
+        }
+        currentEvent = null;
+        continue;
+      }
+
+      // 7. Event attributes
+      if (currentEvent) {
+        if (trimmed.includes('key="concept:name"')) {
+          const match = trimmed.match(/value="([^"]+)"/);
+          if (match) currentEvent.activity = match[1];
+        } else if (trimmed.includes('key="org:resource"')) {
+          const match = trimmed.match(/value="([^"]+)"/);
+          if (match) currentEvent.resource = match[1];
+        } else if (trimmed.includes('key="time:timestamp"')) {
+          const match = trimmed.match(/value="([^"]+)"/);
+          if (match) {
+            const d = new Date(match[1]);
+            if (!isNaN(d.getTime())) {
+              currentEvent.timestamp = d;
+            }
+          }
+        }
+      }
+    }
+
+    if (traces.length > 0) {
+      return {
+        name: logName,
+        traces,
+      };
+    }
+  } catch (err) {
+    console.warn("Fast streaming parser encountered error, falling back to PM4JS:", err);
+  }
+
+  // Fallback to PM4JS DOM parser
+  return parseXesFileWithPm4js(fileName);
 }
 
 function parseEvent(event: Pm4jEvent): XesEvent {

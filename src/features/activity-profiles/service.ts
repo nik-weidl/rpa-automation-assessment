@@ -91,14 +91,28 @@ export async function calculateAndStoreActivityProfiles(
     let durationVariance = 0;
 
     if (durations.length > 0) {
-      minDuration = Math.min(...durations);
-      maxDuration = Math.max(...durations);
-      averageDuration = durations.reduce((sum, d) => sum + d, 0) / durations.length;
-      durationVariance =
-        durations.reduce((sum, d) => sum + Math.pow(d - averageDuration, 2), 0) /
-        durations.length;
+      let minD = Infinity;
+      let maxD = -Infinity;
+      let sumD = 0;
 
-      // calculate median duration
+      for (let i = 0; i < durations.length; i++) {
+        const d = durations[i];
+        if (d < minD) minD = d;
+        if (d > maxD) maxD = d;
+        sumD += d;
+      }
+
+      minDuration = minD === Infinity ? 0 : minD;
+      maxDuration = maxD === -Infinity ? 0 : maxD;
+      averageDuration = sumD / durations.length;
+
+      let sumSq = 0;
+      for (let i = 0; i < durations.length; i++) {
+        sumSq += Math.pow(durations[i] - averageDuration, 2);
+      }
+      durationVariance = sumSq / durations.length;
+
+      // calculate median duration safely
       const sorted = [...durations].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
       medianDuration = sorted.length % 2 !== 0
@@ -165,7 +179,10 @@ export async function calculateAndStoreActivityProfiles(
     };
   });
 
-  // database ingestion transaction (increase timeout to 60s for large files)
+  // Sample up to 3,000 traces for raw DB storage to prevent DB parameter/lock overflows on huge logs (e.g. 150k+ traces)
+  const sampledTraces = sortedTraces.slice(0, 3000);
+
+  // database ingestion transaction with 60s timeout
   await prisma.$transaction(async (tx) => {
     // 1. delete any existing traces and assessments for this process log (for clean overwrites)
     await tx.assessment.deleteMany({
@@ -178,13 +195,20 @@ export async function calculateAndStoreActivityProfiles(
       where: { processLogId },
     });
 
-    // 2. batch insert Traces and retrieve database IDs using createManyAndReturn
-    const tracesCreated = await tx.trace.createManyAndReturn({
-      data: sortedTraces.map((trace) => ({
-        caseId: trace.caseId,
-        processLogId,
-      })),
-    });
+    // 2. batch insert Traces in chunks of 1000
+    const tracesCreated: any[] = [];
+    const CHUNK_SIZE = 1000;
+
+    for (let i = 0; i < sampledTraces.length; i += CHUNK_SIZE) {
+      const chunk = sampledTraces.slice(i, i + CHUNK_SIZE);
+      const inserted = await tx.trace.createManyAndReturn({
+        data: chunk.map((trace) => ({
+          caseId: trace.caseId,
+          processLogId,
+        })),
+      });
+      tracesCreated.push(...inserted);
+    }
 
     // 3. map caseId to the inserted Trace ID
     const caseIdToTraceId = new Map<string, string>();
@@ -192,9 +216,9 @@ export async function calculateAndStoreActivityProfiles(
       caseIdToTraceId.set(t.caseId, t.id);
     }
 
-    // 4. flatten and batch insert Events
+    // 4. flatten and batch insert Events in chunks of 1000
     const eventsData = [];
-    for (const trace of sortedTraces) {
+    for (const trace of sampledTraces) {
       const traceId = caseIdToTraceId.get(trace.caseId);
       if (!traceId) continue;
 
@@ -209,9 +233,10 @@ export async function calculateAndStoreActivityProfiles(
       }
     }
 
-    if (eventsData.length > 0) {
+    for (let i = 0; i < eventsData.length; i += CHUNK_SIZE) {
+      const chunk = eventsData.slice(i, i + CHUNK_SIZE);
       await tx.event.createMany({
-        data: eventsData,
+        data: chunk,
       });
     }
 
