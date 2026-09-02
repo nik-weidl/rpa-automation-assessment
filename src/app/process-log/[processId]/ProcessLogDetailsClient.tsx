@@ -43,18 +43,20 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [batchModel, setBatchModel] = useState<string>("~google/gemini-pro-latest");
   const [colorSource, setColorSource] = useState<"RULE_BASED" | "LLM">("RULE_BASED");
   const [graphModel, setGraphModel] = useState<string>("~google/gemini-pro-latest");
-  const [activeConfirmedNodeLimit, setActiveConfirmedNodeLimit] = useState<number>(20);
-  const [nodeLimit, setNodeLimit] = useState<number>(20);
-  const [sliderDensity, setSliderDensity] = useState<number>(20);
+  const initialNodeLimit = Math.min(20, processLog.activities.length || 20);
+  const [activeConfirmedNodeLimit, setActiveConfirmedNodeLimit] = useState<number>(initialNodeLimit);
+  const [nodeLimit, setNodeLimit] = useState<number>(initialNodeLimit);
+  const [sliderDensity, setSliderDensity] = useState<number>(initialNodeLimit);
   const [evalType, setEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [graphEvalType, setGraphEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [batchEvalType, setBatchEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [liveThinkingTrace, setLiveThinkingTrace] = useState<any[]>([]);
   useEffect(() => {
-    setActiveConfirmedNodeLimit(20);
-    setNodeLimit(20);
-    setSliderDensity(20);
-  }, [processLog.id]);
+    const limit = Math.min(20, processLog.activities.length || 20);
+    setActiveConfirmedNodeLimit(limit);
+    setNodeLimit(limit);
+    setSliderDensity(limit);
+  }, [processLog.id, processLog.activities.length]);
   const [batchScope, setBatchScope] = useState<"all" | "visible">("visible");
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [graphReloadTrigger, setGraphReloadTrigger] = useState<number>(0);
