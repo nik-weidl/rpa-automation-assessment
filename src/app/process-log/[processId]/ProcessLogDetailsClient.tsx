@@ -994,7 +994,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                     style={{ display: "block" }}
                   >
                     <option value="LLM_SINGLE_SHOT">Single-Shot Prompt Batch</option>
-                    <option value="LLM_AGENTIC">Agentic Loop (6-Step) Batch</option>
+                    <option value="LLM_AGENTIC">Agentic Loop Batch</option>
                   </select>
                 </div>
 

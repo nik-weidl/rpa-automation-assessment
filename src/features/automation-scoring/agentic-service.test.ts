@@ -14,10 +14,10 @@ let testActivityId: string;
 beforeAll(async () => {
   const log = await prisma.processLog.create({
     data: {
-      name: "Test 6-Step Agentic Process Log",
-      fileName: "agentic_6step_test.xes",
+      name: "Test Agentic Process Log",
+      fileName: "agentic_test.xes",
       fileSize: 1024,
-      filePath: "/uploads/agentic_6step_test.xes",
+      filePath: "/uploads/agentic_test.xes",
       status: "PENDING",
     },
   });

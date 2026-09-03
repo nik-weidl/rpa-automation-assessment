@@ -46,7 +46,7 @@ export default function FeasibilityMatrix({
             Feasibility Scoring Matrix
           </span>
           <p className="text-xs text-slate-500 font-light mt-0.5">
-            Compare automation scores across rule-based criteria, single-shot LLM prompts, and 6-step agentic reasoning loops.
+            Compare automation scores across rule-based criteria, single-shot LLM prompts, and dynamic agentic reasoning loops.
           </p>
         </div>
         
@@ -100,7 +100,7 @@ export default function FeasibilityMatrix({
                     : "bg-transparent text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Agentic (6-Step)
+                Agentic Loop
               </button>
             </div>
           </div>
@@ -230,7 +230,7 @@ export default function FeasibilityMatrix({
                         {score !== null ? (
                           <div className="flex flex-col items-center gap-0.5">
                             <span 
-                              title={`[${asm.type === "LLM_AGENTIC" ? "6-Step Agentic" : "Single-Shot"}] Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
+                              title={`[${asm.type === "LLM_AGENTIC" ? "Agentic Loop" : "Single-Shot"}] Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
                               className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
                             >
                               {score}%
