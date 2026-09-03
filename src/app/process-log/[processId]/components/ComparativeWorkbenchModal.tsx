@@ -137,6 +137,82 @@ export default function ComparativeWorkbenchModal({
                           )}
                         </ul>
                       </div>
+
+                      {/* Quality Oversight & Verification Audit section for Agentic Loop evaluations */}
+                      {asm.type === "LLM_AGENTIC" && (() => {
+                        let thinkingTrace: any[] = [];
+                        if (asm.rawResponse) {
+                          try {
+                            const parsed = typeof asm.rawResponse === "string" ? JSON.parse(asm.rawResponse) : asm.rawResponse;
+                            if (Array.isArray(parsed?.thinkingTrace)) {
+                              thinkingTrace = parsed.thinkingTrace;
+                            }
+                          } catch (e) {}
+                        }
+
+                        const critiqueSteps = thinkingTrace.filter((step: any) => step.type === "critique" || step.details?.calibratedScore !== undefined || step.details?.reevaluationCount !== undefined);
+
+                        if (critiqueSteps.length === 0) return null;
+
+                        return (
+                          <div className="space-y-2 border-t border-slate-150 pt-3">
+                            <span className="text-[10px] font-bold text-violet-900 uppercase tracking-wider block" style={{ fontSize: "10px", fontWeight: "bold" }}>
+                              Quality Oversight & Verification Audit ({critiqueSteps.length})
+                            </span>
+                            <div className="space-y-2">
+                              {critiqueSteps.map((step: any, cIdx: number) => {
+                                if (step.details?.reevaluationCount) {
+                                  const auditNotes = (step.details.critiqueNotes || step.content)
+                                    ?.replace(/^(Red Team Auditor|Verification Audit)\s+(identified missing proof|requested tool):\s*"?/i, "")
+                                    ?.replace(/"?\.\s*Re-entering loop to execute tool:.*$/i, "");
+
+                                  return (
+                                    <div key={cIdx} className="bg-violet-50/90 p-2.5 rounded-sm text-[10px] text-violet-950 border border-violet-200/90 space-y-1.5 shadow-2xs font-sans">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5 font-bold text-violet-900 text-[10px]">
+                                          <svg className="w-3 h-3 text-violet-600 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                          </svg>
+                                          <span>Re-Entry Iteration #{step.details.reevaluationCount}</span>
+                                        </div>
+                                        {step.details.suggestedTool && (
+                                          <span className="bg-violet-600 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                                            {step.details.suggestedTool}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {auditNotes && (
+                                        <div className="bg-white/80 border-l-2 border-violet-500 p-2 rounded-r-xs text-[10px] leading-relaxed">
+                                          <div className="text-[8.5px] uppercase font-bold text-violet-900 tracking-wider mb-0.5">Verification Audit Rationale:</div>
+                                          <p className="text-slate-800 font-medium font-sans">{auditNotes}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div key={cIdx} className="bg-pink-50/90 p-2.5 rounded-sm text-[10px] text-pink-950 border border-pink-200/90 space-y-1 shadow-2xs font-mono">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-pink-950">Quality Oversight & Verification Audit</span>
+                                      <span className="bg-pink-700 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-bold">
+                                        {step.details?.proposedScore !== undefined && step.details?.proposedScore !== step.details?.calibratedScore
+                                          ? `Calibrated: ${step.details.proposedScore}% → ${step.details.calibratedScore}%`
+                                          : step.details?.calibratedScore !== undefined ? `Verified: ${step.details.calibratedScore}%` : "Verified"}
+                                      </span>
+                                    </div>
+                                    {step.details?.calibratedScore !== undefined && (
+                                      <div className="text-[9.5px] text-slate-700">
+                                        Final Calibrated Score: <strong className="text-pink-950">{step.details.calibratedScore}% ({step.details.calibratedLabel})</strong>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
