@@ -530,12 +530,22 @@ Return JSON with rpaArchetype, rpaArchetypeLabel, implementationEffort, effortRa
 
       const sortedVariants = Object.entries(variantCounts).sort((a, b) => b[1] - a[1]);
       const activityVariantCount = sortedVariants.filter(([vKey]) => vKey.includes(activity.name)).length;
+      const happyPathVariant = sortedVariants[0];
+      const totalTraces = Object.keys(traceSequenceMap).length;
+      const happyPathTraceCount = happyPathVariant ? happyPathVariant[1] : 0;
+      const happyPathCoveragePct = totalTraces > 0 ? `${((happyPathTraceCount / totalTraces) * 100).toFixed(1)}%` : "0.0%";
+      const isOnHappyPath = happyPathVariant ? happyPathVariant[0].includes(activity.name) : false;
 
       recordStep({
         title: "Tool Execution: Inspected Process Trace Variants",
         type: "variants",
         content: `Activity present in ${activityVariantCount} of ${sortedVariants.length} total process variants.`,
-        details: { totalVariants: sortedVariants.length, activityVariantCount },
+        details: {
+          totalProcessVariants: sortedVariants.length,
+          activityVariantCount,
+          happyPathCoverage: happyPathCoveragePct,
+          isOnHappyPath,
+        },
       });
     } else if (selectedTool === "ANALYZE_REWORK_LOOPS") {
       const events = await prisma.event.findMany({
@@ -548,21 +558,41 @@ Return JSON with rpaArchetype, rpaArchetypeLabel, implementationEffort, effortRa
         countsPerTrace[e.traceId] = (countsPerTrace[e.traceId] || 0) + 1;
       });
 
+      const totalCases = Object.keys(countsPerTrace).length;
       const reworkTraces = Object.values(countsPerTrace).filter((cnt) => cnt > 1).length;
+      const reworkPctVal = totalCases > 0 ? (reworkTraces / totalCases) * 100 : 0;
+      const maxExecutions = Object.values(countsPerTrace).length > 0 ? Math.max(...Object.values(countsPerTrace)) : 1;
+      const reworkSeverity = reworkPctVal > 20 || maxExecutions > 3 ? "HIGH" : reworkPctVal > 5 || maxExecutions > 1 ? "MEDIUM" : "NONE";
+
       recordStep({
         title: "Tool Execution: Analyzed Process Rework Loops",
         type: "rework",
         content: `Identified ${reworkTraces} case(s) requiring repeat executions.`,
-        details: { reworkTraces },
+        details: {
+          reworkCaseCount: reworkTraces,
+          reworkPercentage: `${reworkTraces} (${reworkPctVal.toFixed(1)}%)`,
+          maxExecutionsInSingleCase: maxExecutions,
+          reworkSeverity,
+        },
       });
     } else if (selectedTool === "SIMULATE_RPA_ROI") {
-      const totalAnnualHoursSpent = (activity.frequency * (activity.averageDuration / 1000)) / 3600;
-      const annualLaborCostUsd = totalAnnualHoursSpent * 45;
+      const totalAnnualHoursSpent = Math.round(((activity.frequency * (activity.averageDuration / 1000)) / 3600) * 10) / 10;
+      const annualLaborCostUsd = Math.round(totalAnnualHoursSpent * 45);
+      const implementationCostEstUsd = 12000;
+      const estimatedPaybackMonths = annualLaborCostUsd > 0 ? Math.max(1, Math.round((implementationCostEstUsd / (annualLaborCostUsd / 12)) * 10) / 10) : 99;
+      const roiTier = annualLaborCostUsd > 25000 ? "HIGH_ROI" : annualLaborCostUsd > 8000 ? "MODERATE_ROI" : "LOW_ROI";
+
       recordStep({
         title: "Tool Execution: Simulated Financial RPA ROI",
         type: "roi",
-        content: `Simulated annual labor cost savings of $${Math.round(annualLaborCostUsd).toLocaleString()}.`,
-        details: { annualLaborCostUsd },
+        content: `Simulated annual labor cost savings of $${annualLaborCostUsd.toLocaleString()}.`,
+        details: {
+          totalAnnualHoursSpent,
+          annualLaborCostUsd,
+          implementationCostEstUsd,
+          estimatedPaybackMonths,
+          roiTier,
+        },
       });
     }
   }

@@ -251,48 +251,60 @@ export default function ActivityDetailsPanel({
               )}
 
               {step.type === "variants" && step.details && (
-                <div className="mt-2 bg-blue-50 p-2 rounded-sm text-[10px] text-blue-950 border border-blue-200 space-y-1 font-mono">
+                <div className="mt-2 bg-blue-50/80 p-2.5 rounded-sm text-[10px] text-blue-950 border border-blue-200/80 space-y-1.5 font-mono shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-blue-950">Process Variant & Happy Path Inspection</span>
-                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${step.details.isOnHappyPath ? "bg-teal-600" : "bg-orange-600"}`}>
-                      {step.details.isOnHappyPath ? "Happy Path" : "Branch Variant"}
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${
+                      step.details.isOnHappyPath === true ? "bg-teal-600" : step.details.isOnHappyPath === false ? "bg-orange-600" : "bg-blue-600"
+                    }`}>
+                      {step.details.isOnHappyPath !== undefined ? (step.details.isOnHappyPath ? "Happy Path" : "Branch Variant") : "Variant Analysis"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-[9.5px] text-slate-700">
-                    <div>Variants with Activity: <strong className="text-blue-950">{step.details.activityVariantCount} / {step.details.totalProcessVariants}</strong></div>
-                    <div>Happy Path Case Share: <strong className="text-blue-950">{step.details.happyPathCoverage}</strong></div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[9.5px] text-slate-700">
+                    <div>Variants with Activity: <strong className="text-blue-950">{step.details.activityVariantCount ?? 0} / {step.details.totalProcessVariants ?? step.details.totalVariants ?? "N/A"}</strong></div>
+                    <div>Happy Path Case Share: <strong className="text-blue-950">{step.details.happyPathCoverage ?? "N/A"}</strong></div>
                   </div>
                 </div>
               )}
 
               {step.type === "rework" && step.details && (
-                <div className="mt-2 bg-orange-50 p-2 rounded-sm text-[10px] text-orange-950 border border-orange-200 space-y-1 font-mono">
+                <div className="mt-2 bg-orange-50/80 p-2.5 rounded-sm text-[10px] text-orange-950 border border-orange-200/80 space-y-1.5 font-mono shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-orange-950">Process Rework & Self-Loop Analysis</span>
-                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${step.details.reworkSeverity === "HIGH" ? "bg-pink-600" : step.details.reworkSeverity === "MEDIUM" ? "bg-orange-600" : "bg-teal-600"}`}>
-                      Rework: {step.details.reworkSeverity}
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${
+                      step.details.reworkSeverity === "HIGH" ? "bg-pink-600" : step.details.reworkSeverity === "MEDIUM" ? "bg-orange-600" : "bg-teal-600"
+                    }`}>
+                      Rework: {step.details.reworkSeverity || (step.details.reworkCaseCount > 0 || step.details.reworkTraces > 0 ? "LOW" : "NONE")}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-[9.5px] text-slate-700">
-                    <div>Rework Cases: <strong className="text-orange-950">{step.details.reworkCaseCount} ({step.details.reworkPercentage})</strong></div>
-                    <div>Max Loop Repetitions: <strong className="text-orange-950">{step.details.maxExecutionsInSingleCase}x / case</strong></div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[9.5px] text-slate-700">
+                    <div>Rework Cases: <strong className="text-orange-950">
+                      {step.details.reworkPercentage 
+                        ? step.details.reworkPercentage 
+                        : `${step.details.reworkCaseCount ?? step.details.reworkTraces ?? 0} cases`}
+                    </strong></div>
+                    <div>Max Loop Repetitions: <strong className="text-orange-950">
+                      {step.details.maxExecutionsInSingleCase !== undefined ? `${step.details.maxExecutionsInSingleCase}x / case` : "1x / case"}
+                    </strong></div>
                   </div>
                 </div>
               )}
 
               {step.type === "roi" && step.details && (
-                <div className="mt-2 bg-teal-50 p-2 rounded-sm text-[10px] text-teal-950 border border-teal-200 space-y-1 font-mono">
+                <div className="mt-2 bg-teal-50/80 p-2.5 rounded-sm text-[10px] text-teal-950 border border-teal-200/80 space-y-1.5 font-mono shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-teal-950">Financial ROI & Payback Simulation</span>
-                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${step.details.roiTier === "HIGH_ROI" ? "bg-teal-600" : step.details.roiTier === "MODERATE_ROI" ? "bg-orange-600" : "bg-slate-600"}`}>
-                      {step.details.roiTier}
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase font-bold text-white ${
+                      step.details.roiTier === "HIGH_ROI" ? "bg-teal-600" : step.details.roiTier === "MODERATE_ROI" ? "bg-orange-600" : "bg-slate-600"
+                    }`}>
+                      {step.details.roiTier || "ROI SIMULATED"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1 text-[9.5px] text-slate-700">
-                    <div>Annual Hours Spent: <strong className="text-teal-950">{step.details.totalAnnualHoursSpent} hrs/yr</strong></div>
-                    <div>Annual Labor Cost: <strong className="text-teal-950">${step.details.annualLaborCostUsd?.toLocaleString()}</strong></div>
-                    <div>Build Cost Est: <strong className="text-teal-950">${step.details.implementationCostEstUsd?.toLocaleString()}</strong></div>
-                    <div>Est Payback Period: <strong className="text-teal-950">{step.details.estimatedPaybackMonths} mos</strong></div>
+                  <div className="grid grid-cols-2 gap-1.5 text-[9.5px] text-slate-700">
+                    <div>Annual Hours Spent: <strong className="text-teal-950">{(step.details.totalAnnualHoursSpent ?? 0).toLocaleString()} hrs/yr</strong></div>
+                    <div>Annual Labor Cost: <strong className="text-teal-950">${(step.details.annualLaborCostUsd ?? 0).toLocaleString()}</strong></div>
+                    <div>Build Cost Est: <strong className="text-teal-950">${(step.details.implementationCostEstUsd ?? 12000).toLocaleString()}</strong></div>
+                    <div>Est Payback Period: <strong className="text-teal-950">{step.details.estimatedPaybackMonths !== undefined ? `${step.details.estimatedPaybackMonths} mos` : "N/A"}</strong></div>
                   </div>
                 </div>
               )}
