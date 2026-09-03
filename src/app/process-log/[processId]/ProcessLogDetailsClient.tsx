@@ -280,6 +280,16 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     ? processLog.assessments.find((a) => a.id === viewLlmAssessmentId) || null
     : (activityLlmAssessments.length > 0 ? activityLlmAssessments[0] : null);
 
+  const singleEvalAbortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelLlmEvaluation = () => {
+    if (singleEvalAbortControllerRef.current) {
+      singleEvalAbortControllerRef.current.abort();
+      singleEvalAbortControllerRef.current = null;
+    }
+    setEvaluating(false);
+  };
+
   // run single-activity LLM feasibility evaluation
   const handleRunLlmEvaluation = async () => {
     if (!activity) return;
@@ -287,11 +297,15 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     setEvalError(null);
     setLiveThinkingTrace([]);
 
+    const controller = new AbortController();
+    singleEvalAbortControllerRef.current = controller;
+
     if (evalType === "LLM_AGENTIC") {
       try {
         const response = await fetch("/api/assessments/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             activityId: activity.id,
             model: selectedModel,
@@ -328,6 +342,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         };
 
         while (true) {
+          if (controller.signal.aborted) break;
           const { value, done } = await reader.read();
           if (done) break;
 
@@ -353,18 +368,23 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         }
 
         // wait for queue to smoothly drain before finalizing UI state
-        while (pendingQueue.length > 0 || isProcessingQueue) {
+        while ((pendingQueue.length > 0 || isProcessingQueue) && !controller.signal.aborted) {
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
 
-        router.refresh();
-        if (selectedModel === graphModel) {
-          setGraphReloadTrigger((prev) => prev + 1);
+        if (!controller.signal.aborted) {
+          router.refresh();
+          if (selectedModel === graphModel) {
+            setGraphReloadTrigger((prev) => prev + 1);
+          }
         }
       } catch (err: any) {
-        console.error(err);
-        setEvalError(err.message || "failed to run agentic evaluation stream");
+        if (err.name !== "AbortError") {
+          console.error(err);
+          setEvalError(err.message || "failed to run agentic evaluation stream");
+        }
       } finally {
+        singleEvalAbortControllerRef.current = null;
         setEvaluating(false);
       }
     } else {
@@ -372,6 +392,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         const response = await fetch("/api/assessments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             activityId: activity.id,
             type: "LLM_SINGLE_SHOT",
@@ -1103,6 +1124,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 evaluating={evaluating}
                 evalError={evalError}
                 handleRunLlmEvaluation={handleRunLlmEvaluation}
+                handleCancelLlmEvaluation={handleCancelLlmEvaluation}
                 setIsCompareModalOpen={setIsCompareModalOpen}
                 formatDuration={formatDuration}
                 formatCost={formatCost}

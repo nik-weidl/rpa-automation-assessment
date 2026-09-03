@@ -20,6 +20,7 @@ interface ActivityDetailsPanelProps {
   evaluating: boolean;
   evalError: string | null;
   handleRunLlmEvaluation: () => void;
+  handleCancelLlmEvaluation?: () => void;
   setIsCompareModalOpen: (open: boolean) => void;
   formatDuration: (ms: number) => string;
   formatCost: (costUsd: number | null | undefined, modelId: string | null | undefined) => string;
@@ -42,6 +43,7 @@ export default function ActivityDetailsPanel({
   evaluating,
   evalError,
   handleRunLlmEvaluation,
+  handleCancelLlmEvaluation,
   setIsCompareModalOpen,
   formatDuration,
   formatCost,
@@ -876,31 +878,44 @@ export default function ActivityDetailsPanel({
                           </option>
                         ))}
                       </select>
-                      <button
-                        disabled={evaluating}
-                        onClick={handleRunLlmEvaluation}
-                        className={`btn waves-effect text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0 text-white transition-colors ${
-                          evalType === "LLM_AGENTIC"
-                            ? "purple darken-1 hover:bg-purple-700"
-                            : "teal darken-1 hover:bg-teal-700"
-                        }`}
-                        style={{
-                          height: "32px",
-                          lineHeight: "32px",
-                          fontSize: "11px",
-                          minWidth: "110px",
-                          backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
-                        }}
-                      >
-                        {evaluating ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
-                            <span>Re-evaluating...</span>
-                          </>
-                        ) : (
-                          "Re-evaluate"
-                        )}
-                      </button>
+                      {evaluating ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10.5px] text-purple-700 font-bold flex items-center gap-1.5 animate-pulse">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-700" />
+                            <span>{evalType === "LLM_AGENTIC" ? "Evaluating Agentic Loop..." : "Evaluating Single-Shot..."}</span>
+                          </span>
+                          {handleCancelLlmEvaluation && (
+                            <button
+                              type="button"
+                              onClick={handleCancelLlmEvaluation}
+                              className="bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-sm border-0 cursor-pointer transition-all shrink-0 flex items-center gap-1 shadow-2xs"
+                              style={{ height: "32px", lineHeight: "32px" }}
+                            >
+                              <span className="font-bold text-xs">✕</span>
+                              <span>Cancel</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          disabled={evaluating}
+                          onClick={handleRunLlmEvaluation}
+                          className={`btn waves-effect text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0 text-white transition-colors ${
+                            evalType === "LLM_AGENTIC"
+                              ? "purple darken-1 hover:bg-purple-700"
+                              : "teal darken-1 hover:bg-teal-700"
+                          }`}
+                          style={{
+                            height: "32px",
+                            lineHeight: "32px",
+                            fontSize: "11px",
+                            minWidth: "110px",
+                            backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
+                          }}
+                        >
+                          Re-evaluate
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -962,30 +977,43 @@ export default function ActivityDetailsPanel({
                         </option>
                       ))}
                     </select>
-                    <button
-                      disabled={evaluating}
-                      onClick={handleRunLlmEvaluation}
-                      className={`btn waves-effect waves-light text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0 text-white transition-colors ${
-                        evalType === "LLM_AGENTIC"
-                          ? "purple darken-1 hover:bg-purple-700"
-                          : "teal darken-1 hover:bg-teal-700"
-                      }`}
-                      style={{
-                        height: "32px",
-                        lineHeight: "32px",
-                        fontSize: "11px",
-                        backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
-                      }}
-                    >
-                      {evaluating ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                          <span>Evaluating...</span>
-                        </>
-                      ) : (
-                        "Evaluate Activity"
-                      )}
-                    </button>
+                    {evaluating ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10.5px] text-purple-700 font-bold flex items-center gap-1.5 animate-pulse">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-700" />
+                          <span>{evalType === "LLM_AGENTIC" ? "Evaluating Agentic Loop..." : "Evaluating Single-Shot..."}</span>
+                        </span>
+                        {handleCancelLlmEvaluation && (
+                          <button
+                            type="button"
+                            onClick={handleCancelLlmEvaluation}
+                            className="bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-sm border-0 cursor-pointer transition-all shrink-0 flex items-center gap-1 shadow-2xs"
+                            style={{ height: "32px", lineHeight: "32px" }}
+                          >
+                            <span className="font-bold text-xs">✕</span>
+                            <span>Cancel</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        disabled={evaluating}
+                        onClick={handleRunLlmEvaluation}
+                        className={`btn waves-effect waves-light text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0 text-white transition-colors ${
+                          evalType === "LLM_AGENTIC"
+                            ? "purple darken-1 hover:bg-purple-700"
+                            : "teal darken-1 hover:bg-teal-700"
+                        }`}
+                        style={{
+                          height: "32px",
+                          lineHeight: "32px",
+                          fontSize: "11px",
+                          backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
+                        }}
+                      >
+                        Evaluate Activity
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

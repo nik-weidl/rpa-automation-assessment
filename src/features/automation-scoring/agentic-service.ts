@@ -243,7 +243,8 @@ export const AGENTIC_CRITIQUE_JSON_SCHEMA = {
 export async function evaluateActivityWithLLMAgentic(
   activityId: string,
   model: string,
-  onStep?: (step: AgentThinkingStep) => void
+  onStep?: (step: AgentThinkingStep) => void,
+  signal?: AbortSignal
 ) {
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
@@ -339,8 +340,14 @@ export async function evaluateActivityWithLLMAgentic(
 
   // master evaluation loop supporting critique-driven re-entry
   while (!evaluationComplete && reevaluationCount <= MAX_REEVALUATIONS) {
+    if (signal?.aborted) {
+      throw new Error("Evaluation cancelled by user.");
+    }
     // inner dynamic tool selection loop
     while (confidenceScore < 90 && turnCount < MAX_TURNS) {
+    if (signal?.aborted) {
+      throw new Error("Evaluation cancelled by user.");
+    }
     turnCount++;
 
     const historySummary = thinkingTrace.length > 0
@@ -399,8 +406,11 @@ ${historySummary}
 Formulate your current hypothesis and select the single tool required to prove/disprove it, OR select FINAL_SYNTHESIS if confidence is sufficient.`;
 
     const decisionResult = await callOpenRouter(model, systemPrompt, userPrompt, {
-      type: "json_schema",
-      json_schema: AGENTIC_DECISION_JSON_SCHEMA,
+      responseFormat: {
+        type: "json_schema",
+        json_schema: AGENTIC_DECISION_JSON_SCHEMA,
+      },
+      signal,
     });
     trackUsage(decisionResult);
 
@@ -688,9 +698,16 @@ Proposed Assessment:
 
 Audit this assessment. Return calibratedScore, calibratedLabel, rpaArchetype, rpaArchetypeLabel, implementationEffort, critiqueNotes, calibrationRationale, requiresReevaluation, suggestedToolToReinspect, risks, and missingInfo.`;
 
+    if (signal?.aborted) {
+      throw new Error("Evaluation cancelled by user.");
+    }
+
     const critiqueResult = await callOpenRouter(model, critiqueSystemPrompt, critiqueUserPrompt, {
-      type: "json_schema",
-      json_schema: AGENTIC_CRITIQUE_JSON_SCHEMA,
+      responseFormat: {
+        type: "json_schema",
+        json_schema: AGENTIC_CRITIQUE_JSON_SCHEMA,
+      },
+      signal,
     });
     trackUsage(critiqueResult);
 

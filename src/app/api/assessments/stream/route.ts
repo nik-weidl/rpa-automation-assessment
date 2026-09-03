@@ -26,7 +26,8 @@ export async function POST(request: Request) {
             model,
             (step) => {
               sendEvent({ type: "step", step });
-            }
+            },
+            request.signal
           );
 
           sendEvent({ type: "complete", data: assessment });

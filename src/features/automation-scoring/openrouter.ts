@@ -34,6 +34,7 @@ export interface OpenRouterOptions {
   responseFormat?: ResponseFormatOption;
   temperature?: number;
   seed?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -54,6 +55,7 @@ export async function callOpenRouter(
   let responseFormat: ResponseFormatOption | undefined;
   let temperature = 0.0; // Set temperature to 0.0 (greedy decoding) for 100% deterministic assessment scores
   let seed: number | undefined = 42; // Fixed seed for identical batch vs single activity evaluations
+  let signal: AbortSignal | undefined;
 
   if (optionsOrFormat) {
     if ("type" in optionsOrFormat) {
@@ -63,6 +65,7 @@ export async function callOpenRouter(
       responseFormat = opts.responseFormat;
       if (opts.temperature !== undefined) temperature = opts.temperature;
       if (opts.seed !== undefined) seed = opts.seed;
+      if (opts.signal !== undefined) signal = opts.signal;
     }
   }
 
@@ -77,6 +80,7 @@ export async function callOpenRouter(
       "X-Title": "Agentic RPA Assessment Tool",
       "Content-Type": "application/json",
     },
+    signal,
     body: JSON.stringify({
       model,
       messages: [
