@@ -70,7 +70,7 @@ export default function Home() {
           <div className="card hoverable" style={{ borderTop: "4px solid #d81b60" }}>
             <div className="card-content center-align">
               <div className="section">
-                <i className="material-icons medium pink-text text-darken-1">auto_awesome</i>
+                <i className="material-icons medium purple-text text-darken-1">psychology</i>
               </div>
               <span className="card-title font-semibold uppercase text-sm tracking-wider text-slate-800" style={{ fontSize: "15px", fontWeight: "bold" }}>Multi-Model</span>
               <p className="grey-text text-darken-1 font-light" style={{ fontSize: "13px" }}>Scoring Benchmarking</p>

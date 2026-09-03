@@ -1,7 +1,7 @@
 import { Activity, Assessment } from "@/types/models";
 import { SUPPORTED_MODELS } from "@/features/automation-scoring/openrouter";
 import { MetricTooltip } from "@/components/ui/MetricTooltip";
-import { Clock, Users, ArrowRightLeft, Sparkles, AlertTriangle, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
+import { Clock, Users, ArrowRightLeft, Bot, AlertTriangle, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 interface ActivityDetailsPanelProps {
@@ -94,7 +94,7 @@ export default function ActivityDetailsPanel({
           </div>
           <div className="p-4 bg-white rounded-sm border border-slate-200 text-center space-y-2">
             <div className="flex items-center justify-center gap-2 text-purple-700 font-semibold text-xs animate-pulse">
-              <Sparkles className="w-4 h-4 text-purple-600" />
+              <Bot className="w-4 h-4 text-purple-600" />
               <span>Agent is formulating Turn 1 hypothesis & selecting tools...</span>
             </div>
             <p className="text-[10px] text-slate-500">Analyzing process metrics, trace variants, and graph connections...</p>
@@ -650,7 +650,7 @@ export default function ActivityDetailsPanel({
             <div className="border-t border-slate-200 pt-6 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <span className="font-semibold text-slate-800 text-sm flex items-center gap-1.5 block" style={{ fontSize: "14px", fontWeight: "bold" }}>
-                  <Sparkles className="w-4 h-4 text-teal-600" />
+                  <Bot className="w-4 h-4 text-teal-600" />
                   LLM Feasibility Analysis
                 </span>
                 {llmAssessment && (
@@ -914,7 +914,7 @@ export default function ActivityDetailsPanel({
                     <span className={`font-semibold text-xs flex items-center gap-1.5 block ${
                       evalType === "LLM_AGENTIC" ? "text-purple-900" : "text-teal-850"
                     }`} style={{ fontSize: "12px", fontWeight: "bold" }}>
-                      <Sparkles className={`w-3.5 h-3.5 ${evalType === "LLM_AGENTIC" ? "text-purple-600" : "text-teal-605"}`} />
+                      <Bot className={`w-3.5 h-3.5 ${evalType === "LLM_AGENTIC" ? "text-purple-600" : "text-teal-605"}`} />
                       Run LLM Automation Feasibility Assessment
                     </span>
                     <p className="text-xs text-slate-550 leading-normal font-light">
