@@ -122,9 +122,10 @@ export async function callOpenRouter(
 
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
-        // extract cost from OpenRouter statistics response
-        if (typeof statsData?.data?.cost === "number") {
-          costUsd = statsData.data.cost;
+        // extract cost from OpenRouter statistics response (total_cost or cost)
+        const reportedCost = statsData?.data?.total_cost ?? statsData?.data?.cost;
+        if (typeof reportedCost === "number") {
+          costUsd = reportedCost;
         }
       }
     } catch (statsError) {

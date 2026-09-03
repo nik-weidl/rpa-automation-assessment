@@ -154,17 +154,19 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     return `${days.toFixed(1)}d`;
   };
 
-  // helper to estimate and format token cost for display in cents, falling back to local calculation if null
+  // helper to format token cost for display in standard USD notation ($0.0001 / 0.01¢)
   const formatCost = (costUsd: number | null | undefined, modelId: string | null | undefined) => {
     if (costUsd !== null && costUsd !== undefined) {
-      const cents = costUsd * 100;
-      return `${cents.toFixed(4)}¢`;
+      if (costUsd === 0) return "$0.0000";
+      if (costUsd < 0.01) {
+        return `$${costUsd.toFixed(4)} (${(costUsd * 100).toFixed(3)}¢)`;
+      }
+      return `$${costUsd.toFixed(4)}`;
     }
     if (!modelId) return "n/a";
     // approximate fallback based on average prompt length (650 tokens) and completion length (250 tokens)
     const estimatedUsd = calculateLlmCost(modelId, 650, 250);
-    const estimatedCents = estimatedUsd * 100;
-    return `~${estimatedCents.toFixed(4)}¢`;
+    return `~$${estimatedUsd.toFixed(4)} (~${(estimatedUsd * 100).toFixed(3)}¢)`;
   };
 
   // helper to calculate suitability sub-scores for breakdown visualization

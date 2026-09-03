@@ -11,15 +11,18 @@ export function getModelRates(modelId: string): ModelRates {
   let inputRate = 0;
   let outputRate = 0;
 
-  if (model.includes("gemini-pro") || model.includes("gemini-flash")) {
+  if (model.includes("gemini-pro")) {
+    inputRate = 1.25;
+    outputRate = 5.00;
+  } else if (model.includes("gemini-flash")) {
     inputRate = 0.075;
     outputRate = 0.30;
   } else if (model.includes("claude-sonnet") || model.includes("claude-3-5-sonnet")) {
     inputRate = 3.00;
     outputRate = 15.00;
   } else if (model.includes("gpt-latest") || model.includes("gpt-4o")) {
-    inputRate = 5.00;
-    outputRate = 15.00;
+    inputRate = 2.50;
+    outputRate = 10.00;
   } else if (model.includes("gpt-mini") || model.includes("gpt-4o-mini")) {
     inputRate = 0.15;
     outputRate = 0.60;
