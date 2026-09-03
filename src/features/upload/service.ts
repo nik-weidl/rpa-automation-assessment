@@ -95,8 +95,32 @@ export async function uploadXESFile(
 export async function getProcessLogs(): Promise<ProcessLog[]> {
   return prisma.processLog.findMany({
     orderBy: { createdAt: "desc" },
-    take: 20,
-  });
+    include: {
+      activities: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      assessments: {
+        select: {
+          id: true,
+          type: true,
+          model: true,
+          costUsd: true,
+          score: true,
+        },
+      },
+      _count: {
+        select: {
+          activities: true,
+          traces: true,
+          assessments: true,
+        },
+      },
+    },
+    take: 50,
+  }) as any;
 }
 
 export async function getProcessLog(id: string): Promise<ProcessLog | null> {

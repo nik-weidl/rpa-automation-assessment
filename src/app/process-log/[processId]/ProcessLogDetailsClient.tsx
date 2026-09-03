@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ProcessLog, Activity, Assessment } from "@/types/models";
 import ProcessGraph from "@/features/visualization/ProcessGraph";
 import { Loader2 } from "lucide-react";
@@ -736,6 +737,14 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           {/* Sidebar Header */}
           <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
             <div>
+              <Link
+                href="/"
+                className="text-xs font-semibold text-teal-700 hover:text-teal-900 flex items-center gap-1 transition-colors mb-1.5"
+                title="Return to Process Logs Dashboard"
+              >
+                <i className="material-icons text-sm" style={{ float: "none", margin: 0, fontSize: "15px" }}>arrow_back</i>
+                <span>Back to Process Logs</span>
+              </Link>
               <span className="text-sm font-semibold uppercase tracking-wider text-slate-800 truncate max-w-[340px] block" title={processLog.name} style={{ fontSize: "14px", fontWeight: "bold" }}>
                 {processLog.name}
               </span>
