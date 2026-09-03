@@ -418,10 +418,26 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
     }
   };
 
+  const [batchActiveJobs, setBatchActiveJobs] = useState<Record<string, { activityName: string; stepTitle?: string }>>({});
+  const batchEvalAbortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelBatchLlmEvaluation = () => {
+    if (batchEvalAbortControllerRef.current) {
+      batchEvalAbortControllerRef.current.abort();
+      batchEvalAbortControllerRef.current = null;
+    }
+    setBatchEvaluating(false);
+    setBatchActiveJobs({});
+  };
+
   // run batch LLM evaluations across activities
   const handleRunBatchLlmEvaluation = async () => {
     setBatchEvaluating(true);
     setBatchProgress(0);
+    setBatchActiveJobs({});
+
+    const controller = new AbortController();
+    batchEvalAbortControllerRef.current = controller;
 
     // filter target activities based on batchScope selection
     let targets = [...processLog.activities];
@@ -442,45 +458,127 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
 
     const worker = async () => {
       while (activeIndex < total) {
+        if (controller.signal.aborted) break;
         const currentJobIndex = activeIndex++;
         const targetAct = targets[currentJobIndex];
 
-        try {
-          const response = await fetch("/api/assessments", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              activityId: targetAct.id,
-              type: batchEvalType,
-              model: batchModel,
-            }),
-          });
+        if (batchEvalType === "LLM_AGENTIC") {
+          setBatchActiveJobs((prev) => ({
+            ...prev,
+            [targetAct.id]: { activityName: targetAct.name, stepTitle: "Initializing stream..." },
+          }));
 
-          if (!response.ok) {
-            const errBody = await response.json().catch(() => ({}));
-            console.error(`failed to evaluate activity ${targetAct.name}:`, errBody.error || "unknown error");
+          try {
+            const response = await fetch("/api/assessments/stream", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                activityId: targetAct.id,
+                model: batchModel,
+              }),
+            });
+
+            if (response.ok && response.body) {
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = "";
+
+              while (true) {
+                if (controller.signal.aborted) break;
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n\n");
+                buffer = lines.pop() || "";
+
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith("data: ")) {
+                    try {
+                      const eventData = JSON.parse(trimmed.replace(/^data:\s*/, ""));
+                      if (eventData.type === "step" && eventData.step?.title) {
+                        const stepTitle = eventData.step.title;
+                        setBatchActiveJobs((prev) => ({
+                          ...prev,
+                          [targetAct.id]: { activityName: targetAct.name, stepTitle },
+                        }));
+                      }
+                    } catch (pErr) {}
+                  }
+                }
+              }
+            }
+          } catch (err: any) {
+            if (err.name !== "AbortError") {
+              console.error(`network error evaluating activity ${targetAct.name}:`, err);
+            }
+          } finally {
+            setBatchActiveJobs((prev) => {
+              const copy = { ...prev };
+              delete copy[targetAct.id];
+              return copy;
+            });
+            if (!controller.signal.aborted) {
+              setBatchProgress((prev) => prev + 1);
+            }
           }
-        } catch (err) {
-          console.error(`network error evaluating activity ${targetAct.name}:`, err);
-        } finally {
-          setBatchProgress((prev) => prev + 1);
+        } else {
+          setBatchActiveJobs((prev) => ({
+            ...prev,
+            [targetAct.id]: { activityName: targetAct.name, stepTitle: "Evaluating prompt..." },
+          }));
+
+          try {
+            const response = await fetch("/api/assessments", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                activityId: targetAct.id,
+                type: "LLM_SINGLE_SHOT",
+                model: batchModel,
+              }),
+            });
+
+            if (!response.ok) {
+              const errBody = await response.json().catch(() => ({}));
+              console.error(`failed to evaluate activity ${targetAct.name}:`, errBody.error || "unknown error");
+            }
+          } catch (err: any) {
+            if (err.name !== "AbortError") {
+              console.error(`network error evaluating activity ${targetAct.name}:`, err);
+            }
+          } finally {
+            setBatchActiveJobs((prev) => {
+              const copy = { ...prev };
+              delete copy[targetAct.id];
+              return copy;
+            });
+            if (!controller.signal.aborted) {
+              setBatchProgress((prev) => prev + 1);
+            }
+          }
         }
       }
     };
 
-    // start worker pool
-    const workers = Array.from({ length: Math.min(concurrencyLimit, total) }, () => worker());
-    await Promise.all(workers);
-
-    setBatchEvaluating(false);
-    router.refresh();
-    
-    // invalidate transition graph fetch cache and sync overlay mode to trigger instant overlay refresh
-    if (batchModel === graphModel) {
-      if (batchEvalType === "LLM_AGENTIC") {
-        setGraphEvalType("LLM_AGENTIC");
+    try {
+      // start worker pool
+      const workers = Array.from({ length: Math.min(concurrencyLimit, total) }, () => worker());
+      await Promise.all(workers);
+    } finally {
+      router.refresh();
+      if (batchModel === graphModel) {
+        if (batchEvalType === "LLM_AGENTIC") {
+          setGraphEvalType("LLM_AGENTIC");
+        }
+        setGraphReloadTrigger((prev) => prev + 1);
       }
-      setGraphReloadTrigger((prev) => prev + 1);
+      batchEvalAbortControllerRef.current = null;
+      setBatchEvaluating(false);
+      setBatchActiveJobs({});
     }
   };
 
@@ -1039,26 +1137,107 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   </select>
                 </div>
 
-                {/* run button */}
-                <button
-                  type="button"
-                  disabled={batchEvaluating}
-                  onClick={handleRunBatchLlmEvaluation}
-                  className={`w-full py-2 px-3 rounded text-[11px] font-extrabold uppercase tracking-wider cursor-pointer border-0 text-white disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-xs transition-all mt-1 ${
+                {/* batch run button & live progress card */}
+                {batchEvaluating ? (
+                  <div className={`space-y-3 p-3 rounded-sm animate-fadeIn mt-2 border ${
                     batchEvalType === "LLM_AGENTIC"
-                      ? "bg-purple-600 hover:bg-purple-700"
-                      : "bg-teal-600 hover:bg-teal-700"
-                  }`}
-                >
-                  {batchEvaluating ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                      <span>Evaluating ({batchProgress}/{batchScope === "all" ? processLog.activities.length : Math.min(activeConfirmedNodeLimit, processLog.activities.length)})</span>
-                    </>
-                  ) : (
+                      ? "bg-purple-50/70 border-purple-200"
+                      : "bg-teal-50/70 border-teal-200"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className={`w-4 h-4 animate-spin shrink-0 ${
+                          batchEvalType === "LLM_AGENTIC" ? "text-purple-700" : "text-teal-700"
+                        }`} />
+                        <span className={`text-xs font-bold ${
+                          batchEvalType === "LLM_AGENTIC" ? "text-purple-900" : "text-teal-900"
+                        }`}>
+                          Batch {batchEvalType === "LLM_AGENTIC" ? "Agentic" : "Single-Shot"} Evaluation...
+                        </span>
+                      </div>
+                      <span className={`text-[10.5px] font-bold font-mono px-2 py-0.5 rounded ${
+                        batchEvalType === "LLM_AGENTIC"
+                          ? "text-purple-800 bg-purple-100"
+                          : "text-teal-800 bg-teal-100"
+                      }`}>
+                        {batchProgress} / {batchScope === "all" ? processLog.activities.length : Math.min(activeConfirmedNodeLimit, processLog.activities.length)}
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className={`w-full h-2 rounded-full overflow-hidden ${
+                      batchEvalType === "LLM_AGENTIC" ? "bg-purple-200/70" : "bg-teal-200/70"
+                    }`}>
+                      <div
+                        className={`h-full transition-all duration-300 ease-out ${
+                          batchEvalType === "LLM_AGENTIC" ? "bg-purple-600" : "bg-teal-600"
+                        }`}
+                        style={{
+                          width: `${Math.min(100, Math.round((batchProgress / (batchScope === "all" ? processLog.activities.length : Math.min(activeConfirmedNodeLimit, processLog.activities.length))) * 100))}%`,
+                        }}
+                      />
+                    </div>
+
+                    {/* Active Jobs & Live Steps */}
+                    {Object.keys(batchActiveJobs).length > 0 && (
+                      <div className={`space-y-1.5 pt-2 border-t ${
+                        batchEvalType === "LLM_AGENTIC" ? "border-purple-200/70" : "border-teal-200/70"
+                      }`}>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                          batchEvalType === "LLM_AGENTIC" ? "text-purple-900" : "text-teal-900"
+                        }`}>
+                          Currently Evaluating ({Object.keys(batchActiveJobs).length}):
+                        </span>
+                        <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5">
+                          {Object.entries(batchActiveJobs).map(([actId, job]) => (
+                            <div key={actId} className={`bg-white/90 p-2 rounded-xs border text-[10.5px] shadow-2xs ${
+                              batchEvalType === "LLM_AGENTIC" ? "border-purple-200/80" : "border-teal-200/80"
+                            }`}>
+                              <div className={`flex items-center justify-between font-bold ${
+                                batchEvalType === "LLM_AGENTIC" ? "text-purple-950" : "text-teal-950"
+                              }`}>
+                                <span className="truncate max-w-[170px]" title={job.activityName}>
+                                  "{job.activityName}"
+                                </span>
+                              </div>
+                              {job.stepTitle && (
+                                <div className={`text-[9.5px] font-medium mt-0.5 truncate flex items-center gap-1.5 ${
+                                  batchEvalType === "LLM_AGENTIC" ? "text-purple-750" : "text-teal-750"
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${
+                                    batchEvalType === "LLM_AGENTIC" ? "bg-purple-600" : "bg-teal-600"
+                                  }`}></span>
+                                  <span className="truncate">{job.stepTitle}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleCancelBatchLlmEvaluation}
+                      className="w-full py-1.5 px-3 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer border-0 text-white bg-rose-600 hover:bg-rose-700 flex items-center justify-center gap-1 shadow-2xs transition-colors"
+                    >
+                      <span className="font-bold text-xs">✕</span>
+                      <span>Cancel Batch Calculation</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRunBatchLlmEvaluation}
+                    className={`w-full py-2 px-3 rounded text-[11px] font-extrabold uppercase tracking-wider cursor-pointer border-0 text-white flex items-center justify-center gap-1.5 shadow-2xs transition-all mt-1 ${
+                      batchEvalType === "LLM_AGENTIC"
+                        ? "bg-purple-600 hover:bg-purple-700"
+                        : "bg-teal-600 hover:bg-teal-700"
+                    }`}
+                  >
                     <span>Evaluate Batch</span>
-                  )}
-                </button>
+                  </button>
+                )}
               </div>
             </div>
           </div>

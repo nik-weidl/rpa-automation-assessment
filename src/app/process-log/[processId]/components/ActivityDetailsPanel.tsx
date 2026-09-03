@@ -882,7 +882,13 @@ export default function ActivityDetailsPanel({
                         <div className="flex items-center gap-2">
                           <span className="text-[10.5px] text-purple-700 font-bold flex items-center gap-1.5 animate-pulse">
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-700" />
-                            <span>{evalType === "LLM_AGENTIC" ? "Evaluating Agentic Loop..." : "Evaluating Single-Shot..."}</span>
+                            <span>
+                              {evalType === "LLM_AGENTIC"
+                                ? (liveThinkingTrace.length > 0
+                                    ? `Turn ${liveThinkingTrace.length}: ${liveThinkingTrace[liveThinkingTrace.length - 1]?.title}`
+                                    : "Evaluating Agentic Loop (Turn 1)...")
+                                : "Evaluating Single-Shot..."}
+                            </span>
                           </span>
                           {handleCancelLlmEvaluation && (
                             <button
@@ -981,7 +987,13 @@ export default function ActivityDetailsPanel({
                       <div className="flex items-center gap-2">
                         <span className="text-[10.5px] text-purple-700 font-bold flex items-center gap-1.5 animate-pulse">
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-700" />
-                          <span>{evalType === "LLM_AGENTIC" ? "Evaluating Agentic Loop..." : "Evaluating Single-Shot..."}</span>
+                          <span>
+                            {evalType === "LLM_AGENTIC"
+                              ? (liveThinkingTrace.length > 0
+                                  ? `Turn ${liveThinkingTrace.length}: ${liveThinkingTrace[liveThinkingTrace.length - 1]?.title}`
+                                  : "Evaluating Agentic Loop (Turn 1)...")
+                              : "Evaluating Single-Shot..."}
+                          </span>
                         </span>
                         {handleCancelLlmEvaluation && (
                           <button
