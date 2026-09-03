@@ -1023,7 +1023,11 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   type="button"
                   disabled={batchEvaluating}
                   onClick={handleRunBatchLlmEvaluation}
-                  className="w-full py-2 px-3 rounded text-[11px] font-extrabold uppercase tracking-wider cursor-pointer border-0 bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-xs transition-all mt-1"
+                  className={`w-full py-2 px-3 rounded text-[11px] font-extrabold uppercase tracking-wider cursor-pointer border-0 text-white disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-xs transition-all mt-1 ${
+                    batchEvalType === "LLM_AGENTIC"
+                      ? "bg-purple-600 hover:bg-purple-700"
+                      : "bg-teal-600 hover:bg-teal-700"
+                  }`}
                 >
                   {batchEvaluating ? (
                     <>

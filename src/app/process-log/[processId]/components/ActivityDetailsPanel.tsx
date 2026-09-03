@@ -686,11 +686,20 @@ export default function ActivityDetailsPanel({
                                 setEvalType(asm.type as any);
                                 if (asm.model) setSelectedModel(asm.model);
                               }}
-                              className={`text-[9px] px-2.5 py-1 rounded-sm border uppercase tracking-wider font-semibold transition-all duration-150 flex items-center gap-1 cursor-pointer ${
+                              className={`text-[9px] px-2.5 py-1 rounded-sm border uppercase tracking-wider font-semibold transition-all duration-150 flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-0 ${
                                 isSelected
                                   ? isAgentic ? "bg-purple-700 text-white border-purple-700 font-bold shadow-sm" : "bg-teal-600 text-white border-teal-600 font-bold shadow-sm"
                                   : isAgentic ? "bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200" : "bg-white text-slate-500 hover:bg-slate-50 border-slate-200"
                               }`}
+                              style={{
+                                backgroundColor: isSelected
+                                  ? (isAgentic ? "#7e22ce" : "#0d9488")
+                                  : (isAgentic ? "#faf5ff" : "#ffffff"),
+                                borderColor: isSelected
+                                  ? (isAgentic ? "#7e22ce" : "#0d9488")
+                                  : (isAgentic ? "#e9d5ff" : "#e2e8f0"),
+                                color: isSelected ? "#ffffff" : (isAgentic ? "#6b21a8" : "#64748b"),
+                              }}
                             >
                               <span>{displayName}</span>
                               <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isAgentic ? (isSelected ? "bg-purple-900 text-purple-100" : "bg-purple-200 text-purple-800") : (isSelected ? "bg-teal-800 text-teal-100" : "bg-slate-100 text-slate-600")}`}>
@@ -703,8 +712,15 @@ export default function ActivityDetailsPanel({
                       </div>
                       <button
                         onClick={() => setIsCompareModalOpen(true)}
-                        className="btn-small waves-effect waves-light teal darken-1 border-0 cursor-pointer text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5"
-                        style={{ height: "26px", lineHeight: "26px", fontSize: "10px" }}
+                        className={`btn-small waves-effect waves-light border-0 cursor-pointer text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 text-white ${
+                          evalType === "LLM_AGENTIC" ? "purple darken-1" : "teal darken-1"
+                        }`}
+                        style={{
+                          height: "26px",
+                          lineHeight: "26px",
+                          fontSize: "10px",
+                          backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
+                        }}
                       >
                         <i className="material-icons left text-sm" style={{ margin: "0 2px 0 0", fontSize: "14px", lineHeight: "26px" }}>compare_arrows</i>
                         <span>Compare</span>
@@ -863,8 +879,18 @@ export default function ActivityDetailsPanel({
                       <button
                         disabled={evaluating}
                         onClick={handleRunLlmEvaluation}
-                        className="btn-flat waves-effect text-slate-700 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-                        style={{ height: "32px", lineHeight: "32px", fontSize: "11px", border: "1px solid #e0e0e0" }}
+                        className={`btn waves-effect text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0 text-white transition-colors ${
+                          evalType === "LLM_AGENTIC"
+                            ? "purple darken-1 hover:bg-purple-700"
+                            : "teal darken-1 hover:bg-teal-700"
+                        }`}
+                        style={{
+                          height: "32px",
+                          lineHeight: "32px",
+                          fontSize: "11px",
+                          minWidth: "110px",
+                          backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
+                        }}
                       >
                         {evaluating ? (
                           <>
@@ -881,10 +907,14 @@ export default function ActivityDetailsPanel({
               ) : (
                 <div className="space-y-4">
                   {renderThinkingTrace(activeTrace, isLiveTrace)}
-                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 bg-teal-50/10 border border-teal-200 p-4 rounded-sm">
+                  <div className={`flex flex-col md:flex-row items-stretch md:items-center gap-4 border p-4 rounded-sm transition-colors ${
+                    evalType === "LLM_AGENTIC" ? "bg-purple-50/20 border-purple-200" : "bg-teal-50/10 border-teal-200"
+                  }`}>
                   <div className="flex-1 space-y-1">
-                    <span className="font-semibold text-xs text-teal-850 flex items-center gap-1.5 block" style={{ fontSize: "12px", fontWeight: "bold" }}>
-                      <Sparkles className="w-3.5 h-3.5 text-teal-605" />
+                    <span className={`font-semibold text-xs flex items-center gap-1.5 block ${
+                      evalType === "LLM_AGENTIC" ? "text-purple-900" : "text-teal-850"
+                    }`} style={{ fontSize: "12px", fontWeight: "bold" }}>
+                      <Sparkles className={`w-3.5 h-3.5 ${evalType === "LLM_AGENTIC" ? "text-purple-600" : "text-teal-605"}`} />
                       Run LLM Automation Feasibility Assessment
                     </span>
                     <p className="text-xs text-slate-550 leading-normal font-light">
@@ -935,13 +965,22 @@ export default function ActivityDetailsPanel({
                     <button
                       disabled={evaluating}
                       onClick={handleRunLlmEvaluation}
-                      className="btn waves-effect waves-light teal darken-1 text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0"
-                      style={{ height: "32px", lineHeight: "32px", fontSize: "11px" }}
+                      className={`btn waves-effect waves-light text-xs font-semibold uppercase tracking-wider flex items-center justify-center cursor-pointer border-0 text-white transition-colors ${
+                        evalType === "LLM_AGENTIC"
+                          ? "purple darken-1 hover:bg-purple-700"
+                          : "teal darken-1 hover:bg-teal-700"
+                      }`}
+                      style={{
+                        height: "32px",
+                        lineHeight: "32px",
+                        fontSize: "11px",
+                        backgroundColor: evalType === "LLM_AGENTIC" ? "#7e22ce" : "#00897b",
+                      }}
                     >
                       {evaluating ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                          Evaluating...
+                          <span>Evaluating...</span>
                         </>
                       ) : (
                         "Evaluate Activity"
