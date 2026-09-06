@@ -285,3 +285,70 @@ test("evaluateActivityWithLLMAgentic executes new tools (INSPECT_TRACE_VARIANTS,
   expect(stepTypes).toContain("roi");
   expect(stepTypes).toContain("critique");
 });
+
+test("evaluateActivityWithLLMAgentic executes in blinded mode with includeRuleBaseline: false", async () => {
+  const mockedCall = vi.mocked(callOpenRouter);
+
+  // turn 1: decision to FINAL_SYNTHESIS
+  mockedCall.mockResolvedValueOnce({
+    model: "~google/gemini-pro-latest",
+    content: JSON.stringify({
+      confidenceScore: 90,
+      label: "HIGH",
+      reasoning: "Blinded evaluation without benchmark baseline.",
+      selfCritique: "Independent process evidence gathered.",
+      selectedTool: "FINAL_SYNTHESIS",
+      requestedMetrics: [],
+    }),
+    latencyMs: 400,
+    tokens: { prompt: 100, completion: 30, total: 130 },
+    costUsd: 0.0003,
+  });
+
+  // final synthesis mock
+  mockedCall.mockResolvedValueOnce({
+    model: "~google/gemini-pro-latest",
+    content: JSON.stringify({
+      score: 85,
+      label: "HIGH",
+      reasoning: "Independent evaluation score without baseline context.",
+      risks: [],
+      missingInfo: [],
+    }),
+    latencyMs: 1000,
+    tokens: { prompt: 200, completion: 70, total: 270 },
+    costUsd: 0.0010,
+  });
+
+  // critique verification mock
+  mockedCall.mockResolvedValueOnce({
+    model: "~google/gemini-pro-latest",
+    content: JSON.stringify({
+      calibratedScore: 85,
+      calibratedLabel: "HIGH",
+      critiqueNotes: "Verified blinded assessment.",
+      calibrationRationale: "Verified without baseline context.",
+      risks: [],
+      missingInfo: [],
+    }),
+    latencyMs: 500,
+    tokens: { prompt: 150, completion: 50, total: 200 },
+    costUsd: 0.0005,
+  });
+
+  const result = await evaluateActivityWithLLMAgentic(
+    testActivityId,
+    "~google/gemini-pro-latest",
+    undefined,
+    undefined,
+    { includeRuleBaseline: false }
+  );
+
+  expect(result).toBeDefined();
+  expect(result.score).toBe(85);
+  expect(result.label).toBe("HIGH");
+
+  // Verify that system call was made without benchmark context prompts
+  const firstCallArgs = mockedCall.mock.calls[mockedCall.mock.calls.length - 3];
+  expect(firstCallArgs[1]).not.toContain("STATISTICAL BENCHMARK CONTEXT");
+});
