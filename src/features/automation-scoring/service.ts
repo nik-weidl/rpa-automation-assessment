@@ -209,16 +209,19 @@ export async function evaluateActivityWithLLMSingleShot(
   const stdDev = Math.sqrt(activity.durationVariance);
   const cv = activity.averageDuration > 0 ? stdDev / activity.averageDuration : 0;
 
-  const systemPrompt = `You are an expert robotic process automation (RPA) and process mining analyst. Your task is to evaluate process activities for their automation potential.
-Evaluate the given activity on a scale of 0 to 100 based on both quantitative metrics (supplied in the request) and semantic evaluation of the activity's name and context.
-Consider the following criteria from automation feasibility literature:
-1. Standardization: Is the step highly standardized (high case coverage, low sequencing variation)?
-2. Repetitiveness & Volume: Does the step execute frequently (high occurrence frequency)?
-3. Complexity & Branching: Does the step have predictable predecessors and successors? High path entropy indicates high complexity.
-4. Time Savings: Is the execution duration long enough to justify automating?
-5. Predictability: Is the execution time consistent (low duration variance / coefficient of variation)?
-6. Cognitive Requirements: Does the activity name suggest standard rule-based processing (high potential) or subjective human decision-making (low potential)?
-7. System Involvement: Does the task label imply OCR or data entry across systems?
+  const systemPrompt = `You are an expert robotic process automation (RPA) analyst conducting an objective technical evaluation of process activity automatability.
+Evaluate the given activity on a continuous feasibility scale of 0 to 100 based on supplied process mining metrics and semantic task requirements.
+Assess feasibility using standard process mining evaluation criteria:
+1. Process Standardization & Volume: Case coverage percentage and execution frequency.
+2. Structural & Routing Complexity: Incoming and outgoing path entropy (higher entropy indicates non-standard branching and routing friction).
+3. Timing Predictability: Average duration and Coefficient of Variation (CV) (higher CV indicates inconsistent execution timing).
+4. Cognitive & Decision Requirements: Assess whether task semantics indicate deterministic rule-based processing vs. subjective human discretion.
+5. Technical Handoffs: Evaluate system interaction complexity implied by the task label.
+
+Score Guidelines:
+- High Feasibility (67-100%): Standardized, predictable, highly repetitive rule-based tasks.
+- Medium Feasibility (34-66%): Semi-structured administrative tasks with moderate routing or timing variation.
+- Low Feasibility (0-33%): Unstructured, highly variable tasks requiring human discretion or complex decision-making.
 
 You must output a strict JSON object with this format, containing no other text:
 {
