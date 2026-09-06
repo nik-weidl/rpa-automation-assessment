@@ -388,14 +388,14 @@ ${benchmarkContextPrompt}CRITICAL AGENT INSTRUCTIONS FOR TOOL SELECTION:
 1. Do NOT execute tools sequentially or call tools just to check boxes.
 2. Formulate a specific hypothesis about why this activity is or is not automatable (e.g. "High variance might be caused by rework self-loops" or "Standardized activity with high initial certainty").
 3. ONLY select a tool if its output will explicitly prove or disprove your current hypothesis.
-4. If your confidenceScore is already high (>=90%) or if additional tool data will NOT alter your recommendation, select "FINAL_SYNTHESIS" IMMEDIATELY.
+4. If you have gathered sufficient empirical process data to resolve key feasibility uncertainties or if additional tool data will NOT alter your recommendation, select "FINAL_SYNTHESIS" IMMEDIATELY.
 5. "confidenceScore" MUST be an INTEGER percentage between 0 and 100 (e.g., 90 for 90%, NOT 0.90).
 
 FLEXIBLE REFERENCE GUIDELINES (Reference Aid Only - Do NOT force into rigid buckets):
 - Evaluate on a continuous 0-100% feasibility spectrum based on organic process evidence. Use metrics as reference aids:
-  * High Feasibility (~70-100%): Predictable straight-through flow, low routing entropy (<0.5), low duration CV (<0.5), minimal rework (<5%).
-  * Medium Feasibility (~50-69%): Standard administrative tasks, moderate entropy (0.5-1.0), moderate duration CV (0.5-1.0), minor rework (5-15%).
-  * Low Feasibility (~0-49%): Unstructured inputs, high routing entropy (>1.0), high duration CV (>1.0), severe rework (>15%).
+  * High Feasibility (67-100%): Predictable straight-through flow, low routing entropy (<0.5), low duration CV (<0.5), minimal rework (<5%).
+  * Medium Feasibility (34-66%): Standard administrative tasks, moderate entropy (0.5-1.0), moderate duration CV (0.5-1.0), minor rework (5-15%).
+  * Low Feasibility (0-33%): Unstructured inputs, high routing entropy (>1.0), high duration CV (>1.0), severe rework (>15%).
 
 CRITICAL SAFETY & DOMAIN HAZARD EVALUATION:
 - Evaluate domain risks: Health & Patient Safety, High Financial Capital Risk, Mission-Critical Operations.
@@ -642,9 +642,9 @@ Evaluate activity "${activity.name}".
 
 ${turn5BenchmarkContext}FEASIBILITY EVALUATION GUIDELINES (Reference Aids Only - Continuous 0-100% Scale):
 1. Evaluate feasibility organically on a continuous 0-100% scale based on specific process evidence. Use metrics as flexible aids, NOT rigid buckets:
-   - High Feasibility (~70-100%): Predictable flow, low entropy (<0.5), low duration CV (<0.5).
-   - Medium Feasibility (~50-69%): Moderate flow, standard form/data intake, minor exception loops.
-   - Low Feasibility (~0-49%): Unstructured inputs, high routing entropy (>1.0), severe rework loops.
+   - High Feasibility (67-100%): Predictable flow, low entropy (<0.5), low duration CV (<0.5).
+   - Medium Feasibility (34-66%): Moderate flow, standard form/data intake, minor exception loops.
+   - Low Feasibility (0-33%): Unstructured inputs, high routing entropy (>1.0), severe rework loops.
 2. Domain Safety & Archetypes:
    - If human oversight is required for domain safety (e.g. clinical data or financial approvals), assign "HUMAN_IN_THE_LOOP" archetype.
    - DO NOT artificially penalize technical feasibility scores simply because human oversight is required. Feasibility measures technical task structure and standardization; safety risk is addressed by assigning the "HUMAN_IN_THE_LOOP" archetype.
@@ -652,9 +652,7 @@ ${turn5BenchmarkContext}FEASIBILITY EVALUATION GUIDELINES (Reference Aids Only -
 
     const turn5UserPrompt = `Activity: "${activity.name}"
 Collected Execution Evidence:
-${includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null ? `- Statistical Rule-Based Benchmark: ${ruleBasedScore}% (${ruleBasedLabel})\n` : ""}- Initial Confidence & Reasoning: ${currentReasoning}
-- Self Critique: ${selfCritique}
-- Retrieved Metrics: ${JSON.stringify(retrievedMetrics)}
+${includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null ? `- Statistical Rule-Based Benchmark: ${ruleBasedScore}% (${ruleBasedLabel})\n` : ""}- Retrieved Metrics: ${JSON.stringify(retrievedMetrics)}
 - Process Graph: ${neighborSummary}
 - Tech Archetype: ${rpaArchetypeLabel} (Effort: ${implementationEffort})
 
@@ -696,7 +694,7 @@ Synthesize final score, label, reasoning, risks, and missing info.`;
     });
 
     const critiqueBenchmarkRule = (includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null)
-      ? `2. The statistical rule-based score (${ruleBasedScore}%) serves as benchmark reference context. If the agent's proposed score diverges from the benchmark, confirm that the divergence is supported by clear empirical evidence (e.g. severe rework loops, trace variant fragmentation, or clinical safety hazards).`
+      ? `2. The statistical rule-based score (${ruleBasedScore}%) serves as benchmark reference context. Evaluate the proposed score strictly against empirical process mining evidence. Do not give default preference to the benchmark over agent findings, nor vice versa.`
       : `2. Verify the proposed score purely based on collected empirical process evidence and semantic reasoning.`;
 
     // adversarial self-critique turn
