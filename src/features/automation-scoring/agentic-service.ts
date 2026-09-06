@@ -244,8 +244,13 @@ export async function evaluateActivityWithLLMAgentic(
   activityId: string,
   model: string,
   onStep?: (step: AgentThinkingStep) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: {
+    includeRuleBaseline?: boolean;
+  }
 ) {
+  const includeRuleBaseline = options?.includeRuleBaseline ?? true;
+
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
   });
@@ -259,21 +264,27 @@ export async function evaluateActivityWithLLMAgentic(
     where: { processLogId: activity.processLogId },
   });
 
-  // fetch Rule-Based assessment for statistical baseline anchoring
-  const ruleBasedAssessment = await prisma.assessment.findFirst({
-    where: {
-      activityId,
-      type: "RULE_BASED",
-    },
-  });
-  const ruleBasedScore = ruleBasedAssessment ? Math.round(ruleBasedAssessment.score) : 65;
-  const ruleBasedLabel = ruleBasedAssessment ? ruleBasedAssessment.label : "MEDIUM";
+  // fetch Rule-Based assessment for statistical baseline anchoring ONLY if enabled
+  let ruleBasedScore: number | null = null;
+  let ruleBasedLabel: string | null = null;
+
+  if (includeRuleBaseline) {
+    const ruleBasedAssessment = await prisma.assessment.findFirst({
+      where: {
+        activityId,
+        type: "RULE_BASED",
+      },
+    });
+    if (ruleBasedAssessment) {
+      ruleBasedScore = Math.round(ruleBasedAssessment.score);
+      ruleBasedLabel = ruleBasedAssessment.label;
+    }
+  }
 
   const stdDev = Math.sqrt(activity.durationVariance);
   const cv = activity.averageDuration > 0 ? stdDev / activity.averageDuration : 0;
 
   const availableMetrics: Record<string, { value: string | number; description: string }> = {
-    ruleBasedBaseline: { value: `${ruleBasedScore}% (${ruleBasedLabel})`, description: `Statistical Rule-Based Feasibility Score: ${ruleBasedScore}% (${ruleBasedLabel}) calculated from Delphi consensus process mining weights.` },
     frequency: { value: activity.frequency, description: `${activity.frequency} total executions` },
     caseCoverage: { value: `${(activity.caseCoverage * 100).toFixed(1)}%`, description: `${(activity.caseCoverage * 100).toFixed(1)}% of process instances` },
     averageDuration: { value: formatDuration(activity.averageDuration), description: `Average execution duration: ${formatDuration(activity.averageDuration)} (Median: ${formatDuration(activity.medianDuration)})` },
@@ -285,6 +296,13 @@ export async function evaluateActivityWithLLMAgentic(
     predecessors: { value: activity.predecessors.join(", ") || "None", description: `Incoming Predecessor Tasks: ${activity.predecessors.join(", ") || "None"}` },
     successors: { value: activity.successors.join(", ") || "None", description: `Outgoing Successor Tasks: ${activity.successors.join(", ") || "None"}` },
   };
+
+  if (includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null) {
+    availableMetrics.ruleBasedBaseline = {
+      value: `${ruleBasedScore}% (${ruleBasedLabel})`,
+      description: `Statistical Rule-Based Feasibility Score: ${ruleBasedScore}% (${ruleBasedLabel}) calculated from Delphi consensus process mining weights.`,
+    };
+  }
 
   let totalLatencyMs = 0;
   let totalCostUsd = 0;
@@ -317,14 +335,14 @@ export async function evaluateActivityWithLLMAgentic(
 
   let currentReasoning = "initial hypothesis forming.";
   let selfCritique = "evaluating initial process data.";
-  let calibratedScore = ruleBasedScore;
-  let calibratedLabel: AutomationLabel = ruleBasedLabel as AutomationLabel;
+  let calibratedScore = 0;
+  let calibratedLabel: AutomationLabel = "MEDIUM";
   let finalReasoning = "";
   let combinedReasoning = "";
   let finalRisks: string[] = [];
   let finalMissingInfo: string[] = [];
   let critiqueNotes = "";
-  let currentLabel: AutomationLabel = ruleBasedLabel as AutomationLabel;
+  let currentLabel: AutomationLabel = "MEDIUM";
 
   let retrievedMetrics: Record<string, { value: string | number; description: string }> = {};
   let neighborDetails: any = null;
@@ -354,15 +372,19 @@ export async function evaluateActivityWithLLMAgentic(
       ? thinkingTrace.map((s, i) => `Step ${i + 1} [${s.title}] (${s.type}): ${s.content}`).join("\n")
       : "No prior steps executed yet.";
 
-    const systemPrompt = `You are a senior RPA solution architect in Turn ${turnCount} of a dynamic hypothesis-driven agentic evaluation loop.
-Evaluate activity name "${activity.name}".
-
-STATISTICAL BENCHMARK CONTEXT:
+    const benchmarkContextPrompt = (includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null)
+      ? `STATISTICAL BENCHMARK CONTEXT:
 - For reference, the statistical rule-based calculation for this activity is ${ruleBasedScore}% (${ruleBasedLabel}).
 - Formulate your OWN independent agentic hypothesis and feasibility score based on multi-tool process evidence, semantic task context, trace variants, rework loops, and domain safety.
 - You may agree with, refine, or diverge from the rule-based benchmark whenever your process mining evidence and semantic reasoning justify it.
 
-CRITICAL AGENT INSTRUCTIONS FOR TOOL SELECTION:
+`
+      : "";
+
+    const systemPrompt = `You are a senior RPA solution architect in Turn ${turnCount} of a dynamic hypothesis-driven agentic evaluation loop.
+Evaluate activity name "${activity.name}".
+
+${benchmarkContextPrompt}CRITICAL AGENT INSTRUCTIONS FOR TOOL SELECTION:
 1. Do NOT execute tools sequentially or call tools just to check boxes.
 2. Formulate a specific hypothesis about why this activity is or is not automatable (e.g. "High variance might be caused by rework self-loops" or "Standardized activity with high initial certainty").
 3. ONLY select a tool if its output will explicitly prove or disprove your current hypothesis.
@@ -378,7 +400,7 @@ FLEXIBLE REFERENCE GUIDELINES (Reference Aid Only - Do NOT force into rigid buck
 CRITICAL SAFETY & DOMAIN HAZARD EVALUATION:
 - Evaluate domain risks: Health & Patient Safety, High Financial Capital Risk, Mission-Critical Operations.
 - If high-hazard domain risks exist without mandatory human approval checkpoints, enforce the "HUMAN_IN_THE_LOOP" technology archetype.
-- DO NOT artificially crash technical feasibility scores simply because human oversight is required. Technical feasibility reflects task structure and standardization, while safety is enforced by assigning the "HUMAN_IN_THE_LOOP" archetype and documenting required human approval checkpoints.
+- DO NOT artificially penalize technical feasibility scores simply because human oversight is required. Technical feasibility reflects task structure and standardization, while safety is enforced by assigning the "HUMAN_IN_THE_LOOP" archetype and documenting required human approval checkpoints.
 
 Available Tools:
 - "RETRIEVE_METRICS": Request quantitative process mining metrics (duration CV, entropy, case coverage).
@@ -394,7 +416,7 @@ Output JSON matching required schema.`;
 
     const userPrompt = `Activity Name: "${activity.name}"
 Turn ${turnCount} Execution State:
-- Current Confidence Score: ${confidenceScore}% (${currentLabel})
+- Current Confidence Score: ${confidenceScore}%${confidenceScore > 0 ? ` (${currentLabel})` : ""}
 - Current Reasoning & Hypothesis: ${currentReasoning}
 - Self Critique & Missing Proof: ${selfCritique}
 - Retrieved Metrics: ${Object.keys(retrievedMetrics).join(", ") || "None"}
@@ -608,14 +630,17 @@ Return JSON with rpaArchetype, rpaArchetypeLabel, implementationEffort, effortRa
   }
 
     // Synthesis turn
+    const turn5BenchmarkContext = (includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null)
+      ? `STATISTICAL BENCHMARK CONTEXT:
+- Statistical Rule-Based Benchmark: ${ruleBasedScore}% (${ruleBasedLabel}).
+- Use this benchmark as reference context, but synthesize your OWN independent feasibility score based on your collected multi-tool evidence.
+`
+      : "";
+
     const turn5SystemPrompt = `You are a senior RPA solution architect conducting final synthesis in an agentic evaluation loop.
 Evaluate activity "${activity.name}".
 
-STATISTICAL BENCHMARK CONTEXT:
-- Statistical Rule-Based Benchmark: ${ruleBasedScore}% (${ruleBasedLabel}).
-- Use this benchmark as reference context, but synthesize your OWN independent feasibility score based on your collected multi-tool evidence (metrics, graph context, rework loops, trace variants, and domain safety rules).
-
-FEASIBILITY EVALUATION GUIDELINES (Reference Aids Only - Continuous 0-100% Scale):
+${turn5BenchmarkContext}FEASIBILITY EVALUATION GUIDELINES (Reference Aids Only - Continuous 0-100% Scale):
 1. Evaluate feasibility organically on a continuous 0-100% scale based on specific process evidence. Use metrics as flexible aids, NOT rigid buckets:
    - High Feasibility (~70-100%): Predictable flow, low entropy (<0.5), low duration CV (<0.5).
    - Medium Feasibility (~50-69%): Moderate flow, standard form/data intake, minor exception loops.
@@ -627,8 +652,7 @@ FEASIBILITY EVALUATION GUIDELINES (Reference Aids Only - Continuous 0-100% Scale
 
     const turn5UserPrompt = `Activity: "${activity.name}"
 Collected Execution Evidence:
-- Statistical Rule-Based Benchmark: ${ruleBasedScore}% (${ruleBasedLabel})
-- Initial Confidence & Reasoning: ${currentReasoning}
+${includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null ? `- Statistical Rule-Based Benchmark: ${ruleBasedScore}% (${ruleBasedLabel})\n` : ""}- Initial Confidence & Reasoning: ${currentReasoning}
 - Self Critique: ${selfCritique}
 - Retrieved Metrics: ${JSON.stringify(retrievedMetrics)}
 - Process Graph: ${neighborSummary}
@@ -671,13 +695,17 @@ Synthesize final score, label, reasoning, risks, and missing info.`;
       },
     });
 
+    const critiqueBenchmarkRule = (includeRuleBaseline && ruleBasedScore !== null && ruleBasedLabel !== null)
+      ? `2. The statistical rule-based score (${ruleBasedScore}%) serves as benchmark reference context. If the agent's proposed score diverges from the benchmark, confirm that the divergence is supported by clear empirical evidence (e.g. severe rework loops, trace variant fragmentation, or clinical safety hazards).`
+      : `2. Verify the proposed score purely based on collected empirical process evidence and semantic reasoning.`;
+
     // adversarial self-critique turn
     const critiqueSystemPrompt = `You are a Senior RPA Verification & Quality Auditor conducting an objective quality audit on a proposed RPA assessment.
 Your goal is to verify score accuracy, enforce domain safety, and eliminate bias.
 
 CRITICAL VERIFICATION RULES:
 1. Evaluate score accuracy independently based on evidence quality and reasoning soundness.
-2. The statistical rule-based score (${ruleBasedScore}%) serves as benchmark reference context. If the agent's proposed score diverges from the benchmark, confirm that the divergence is supported by clear empirical evidence (e.g. severe rework loops, trace variant fragmentation, or clinical safety hazards).
+${critiqueBenchmarkRule}
 3. DO NOT force scores into rigid artificial boundaries. Evaluate score accuracy organically on a continuous 0-100% scale using process evidence as a reference aid.
 4. SAFETY AUDIT (HEALTH, FINANCIAL & MISSION-CRITICAL SAFETY):
    - Inspect whether this activity involves Health/Life Safety (e.g. clinical data mutation), High Financial Capital Risk (e.g. un-audited fund transfers, high-value invoice approvals), or Mission-Critical irreversible system operations.

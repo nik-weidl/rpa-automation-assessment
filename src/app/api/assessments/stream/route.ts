@@ -4,7 +4,7 @@ import { evaluateActivityWithLLMAgentic } from "@/features/automation-scoring/ag
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { activityId, model } = body;
+    const { activityId, model, includeRuleBaseline } = body;
 
     if (!activityId || !model) {
       return NextResponse.json(
@@ -27,7 +27,8 @@ export async function POST(request: Request) {
             (step) => {
               sendEvent({ type: "step", step });
             },
-            request.signal
+            request.signal,
+            { includeRuleBaseline }
           );
 
           sendEvent({ type: "complete", data: assessment });

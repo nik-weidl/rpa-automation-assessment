@@ -395,17 +395,45 @@ export default function Home() {
                   </p>
                 </div>
 
-                {/* Quick Search Bar */}
+                {/* Search Bar & Global Benchmark Export */}
                 {logs.length > 0 && (
-                  <div className="relative flex items-center" style={{ width: "240px" }}>
-                    <input
-                      type="text"
-                      placeholder="Search process logs..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-3 py-1 bg-white border border-slate-300 rounded text-xs grey-text text-darken-3 focus:outline-none focus:border-teal-500"
-                      style={{ height: "34px", margin: 0, borderBottom: "1px solid #cbd5e1", outline: "none", boxShadow: "none" }}
-                    />
+                  <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+                    <div className="relative flex items-center" style={{ width: "200px" }}>
+                      <input
+                        type="text"
+                        placeholder="Search process logs..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-1 bg-white border border-slate-300 rounded text-xs grey-text text-darken-3 focus:outline-none focus:border-teal-500"
+                        style={{ height: "32px", margin: 0, borderBottom: "1px solid #cbd5e1", outline: "none", boxShadow: "none" }}
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href="/api/export?format=csv"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-flat waves-effect text-teal-700 hover:bg-teal-50 text-xs font-semibold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                        style={{ height: "32px", lineHeight: "32px", border: "1px solid #b2dfdb", padding: "0 8px" }}
+                        title="Export all process log activity profiles & assessment benchmarks as CSV"
+                      >
+                        <i className="material-icons text-sm" style={{ float: "none", margin: 0, fontSize: "15px" }}>download</i>
+                        <span>Export CSV</span>
+                      </a>
+
+                      <a
+                        href="/api/export?format=json"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-flat waves-effect text-purple-700 hover:bg-purple-50 text-xs font-semibold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                        style={{ height: "32px", lineHeight: "32px", border: "1px solid #e1bee7", padding: "0 8px" }}
+                        title="Export all process log activity profiles & assessment benchmarks as JSON"
+                      >
+                        <i className="material-icons text-sm" style={{ float: "none", margin: 0, fontSize: "15px" }}>code</i>
+                        <span>Export JSON</span>
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>
@@ -511,6 +539,17 @@ export default function Home() {
                                     <span>Explorer</span>
                                   </button>
                                 </Link>
+
+                                <a
+                                  href={`/api/process-logs/${log.id}/export?format=csv`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn-flat waves-effect text-teal-700 hover:bg-teal-50 text-xs font-semibold cursor-pointer"
+                                  style={{ height: "30px", lineHeight: "30px", fontSize: "11px", padding: "0 8px", border: "1px solid #b2dfdb", display: "inline-flex", alignItems: "center" }}
+                                  title="Export process log benchmarks (CSV)"
+                                >
+                                  <i className="material-icons text-sm" style={{ float: "none", margin: 0, fontSize: "16px" }}>file_download</i>
+                                </a>
 
                                 <button
                                   type="button"

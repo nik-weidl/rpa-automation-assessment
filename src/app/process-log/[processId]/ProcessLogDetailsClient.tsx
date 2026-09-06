@@ -51,6 +51,8 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
   const [evalType, setEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [graphEvalType, setGraphEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
   const [batchEvalType, setBatchEvalType] = useState<"LLM_SINGLE_SHOT" | "LLM_AGENTIC">("LLM_AGENTIC");
+  const [includeRuleBaseline, setIncludeRuleBaseline] = useState<boolean>(true);
+  const [batchIncludeRuleBaseline, setBatchIncludeRuleBaseline] = useState<boolean>(true);
   const [liveThinkingTrace, setLiveThinkingTrace] = useState<any[]>([]);
   const [densityInput, setDensityInput] = useState<string>(String(sliderDensity));
   useEffect(() => {
@@ -312,6 +314,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
           body: JSON.stringify({
             activityId: activity.id,
             model: selectedModel,
+            includeRuleBaseline,
           }),
         });
 
@@ -400,6 +403,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
             activityId: activity.id,
             type: "LLM_SINGLE_SHOT",
             model: selectedModel,
+            includeRuleBaseline,
           }),
         });
 
@@ -479,6 +483,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
               body: JSON.stringify({
                 activityId: targetAct.id,
                 model: batchModel,
+                includeRuleBaseline: batchIncludeRuleBaseline,
               }),
             });
 
@@ -542,6 +547,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 activityId: targetAct.id,
                 type: "LLM_SINGLE_SHOT",
                 model: batchModel,
+                includeRuleBaseline: batchIncludeRuleBaseline,
               }),
             });
 
@@ -736,15 +742,38 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
         <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ minWidth: "480px" }}>
           {/* Sidebar Header */}
           <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50/50 shrink-0">
-            <div>
-              <Link
-                href="/"
-                className="text-xs font-semibold text-teal-700 hover:text-teal-900 flex items-center gap-1 transition-colors mb-1.5"
-                title="Return to Process Logs Dashboard"
-              >
-                <i className="material-icons text-sm" style={{ float: "none", margin: 0, fontSize: "15px" }}>arrow_back</i>
-                <span>Back to Process Logs</span>
-              </Link>
+            <div className="w-full">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <Link
+                  href="/"
+                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 flex items-center gap-1 transition-colors"
+                  title="Return to Process Logs Dashboard"
+                >
+                  <i className="material-icons text-sm" style={{ float: "none", margin: 0, fontSize: "15px" }}>arrow_back</i>
+                  <span>Back to Dashboard</span>
+                </Link>
+
+                <div className="flex items-center gap-1">
+                  <a
+                    href={`/api/process-logs/${processLog.id}/export?format=csv`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded hover:bg-teal-100 transition-colors"
+                    title="Export log benchmarks as CSV"
+                  >
+                    CSV
+                  </a>
+                  <a
+                    href={`/api/process-logs/${processLog.id}/export?format=json`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded hover:bg-purple-100 transition-colors"
+                    title="Export log benchmarks as JSON"
+                  >
+                    JSON
+                  </a>
+                </div>
+              </div>
               <span className="text-sm font-semibold uppercase tracking-wider text-slate-800 truncate max-w-[340px] block" title={processLog.name} style={{ fontSize: "14px", fontWeight: "bold" }}>
                 {processLog.name}
               </span>
@@ -1148,9 +1177,46 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                   </select>
                 </div>
 
+                {/* Rule-Based Score Context Toggle */}
+                <div className="pt-1 pb-2">
+                  <label
+                    onClick={() => !batchEvaluating && setBatchIncludeRuleBaseline(!batchIncludeRuleBaseline)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      cursor: batchEvaluating ? "not-allowed" : "pointer",
+                      userSelect: "none",
+                      opacity: batchEvaluating ? 0.6 : 1,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "15px",
+                        height: "15px",
+                        borderRadius: "3px",
+                        border: batchIncludeRuleBaseline ? "1px solid #0d9488" : "1px solid #94a3b8",
+                        backgroundColor: batchIncludeRuleBaseline ? "#0d9488" : "#ffffff",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <svg width="9" height="7" viewBox="0 0 10 8" fill="none" style={{ opacity: batchIncludeRuleBaseline ? 1 : 0, display: "block" }}>
+                        <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span style={{ fontSize: "11px", fontWeight: 500, color: "#334155" }}>
+                      Provide Rule Score to LLM as Context
+                    </span>
+                  </label>
+                </div>
+
                 {/* batch run button & live progress card */}
                 {batchEvaluating ? (
-                  <div className={`space-y-3 p-3 rounded-sm animate-fadeIn mt-2 border ${
+                  <div className={`space-y-3 p-3 rounded-sm mt-2 border ${
                     batchEvalType === "LLM_AGENTIC"
                       ? "bg-purple-50/70 border-purple-200"
                       : "bg-teal-50/70 border-teal-200"
@@ -1310,6 +1376,8 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                 setSelectedModel={setSelectedModel}
                 evalType={evalType}
                 setEvalType={setEvalType}
+                includeRuleBaseline={includeRuleBaseline}
+                setIncludeRuleBaseline={setIncludeRuleBaseline}
                 liveThinkingTrace={liveThinkingTrace}
                 evaluating={evaluating}
                 evalError={evalError}

@@ -174,14 +174,36 @@ export const SINGLE_SHOT_JSON_SCHEMA = {
  */
 export async function evaluateActivityWithLLMSingleShot(
   activityId: string,
-  model: string
+  model: string,
+  options?: {
+    includeRuleBaseline?: boolean;
+  }
 ) {
+  const includeRuleBaseline = options?.includeRuleBaseline ?? true;
+
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
   });
 
   if (!activity) {
     throw new Error(`activity with ID ${activityId} not found`);
+  }
+
+  // fetch Rule-Based assessment for baseline anchoring if enabled
+  let ruleBasedScore: number | null = null;
+  let ruleBasedLabel: string | null = null;
+
+  if (includeRuleBaseline) {
+    const ruleBasedAssessment = await prisma.assessment.findFirst({
+      where: {
+        activityId,
+        type: "RULE_BASED",
+      },
+    });
+    if (ruleBasedAssessment) {
+      ruleBasedScore = Math.round(ruleBasedAssessment.score);
+      ruleBasedLabel = ruleBasedAssessment.label;
+    }
   }
 
   const stdDev = Math.sqrt(activity.durationVariance);
@@ -213,7 +235,7 @@ You must output a strict JSON object with this format, containing no other text:
 
   const userPrompt = `Please evaluate this process activity:
 - Name: "${activity.name}"
-- Frequency: ${activity.frequency} executions
+${ruleBasedScore !== null ? `- Statistical Rule-Based Baseline Score: ${ruleBasedScore}% (${ruleBasedLabel}) (derived from deterministic process mining weights)\n` : ""}- Frequency: ${activity.frequency} executions
 - Case Coverage: ${(activity.caseCoverage * 100).toFixed(1)}% of process instances
 - Predecessor Steps: ${activity.predecessors.join(", ") || "None"} (Incoming Path Entropy: ${activity.predecessorEntropy.toFixed(2)})
 - Successor Steps: ${activity.successors.join(", ") || "None"} (Outgoing Path Entropy: ${activity.successorEntropy.toFixed(2)})

@@ -5,7 +5,7 @@ import { evaluateActivityWithLLMAgentic } from "@/features/automation-scoring/ag
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { activityId, type, model } = body;
+    const { activityId, type, model, includeRuleBaseline } = body;
 
     // validate request parameters
     if (!activityId || !type || !model) {
@@ -25,8 +25,8 @@ export async function POST(request: Request) {
     // trigger assessment based on type
     const assessment =
       type === "LLM_AGENTIC"
-        ? await evaluateActivityWithLLMAgentic(activityId, model)
-        : await evaluateActivityWithLLMSingleShot(activityId, model);
+        ? await evaluateActivityWithLLMAgentic(activityId, model, undefined, undefined, { includeRuleBaseline })
+        : await evaluateActivityWithLLMSingleShot(activityId, model, { includeRuleBaseline });
 
     return NextResponse.json({ success: true, data: assessment });
   } catch (error: any) {

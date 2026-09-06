@@ -22,6 +22,8 @@ interface ActivityDetailsPanelProps {
   handleRunLlmEvaluation: () => void;
   handleCancelLlmEvaluation?: () => void;
   setIsCompareModalOpen: (open: boolean) => void;
+  includeRuleBaseline: boolean;
+  setIncludeRuleBaseline: (val: boolean) => void;
   formatDuration: (ms: number) => string;
   formatCost: (costUsd: number | null | undefined, modelId: string | null | undefined) => string;
   getSubScores: (act: Activity) => { name: string; score: number; weight: number; desc: string; value: string }[];
@@ -39,6 +41,8 @@ export default function ActivityDetailsPanel({
   setSelectedModel,
   evalType,
   setEvalType,
+  includeRuleBaseline,
+  setIncludeRuleBaseline,
   liveThinkingTrace = [],
   evaluating,
   evalError,
@@ -837,7 +841,42 @@ export default function ActivityDetailsPanel({
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                    <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                      <label
+                        onClick={() => !evaluating && setIncludeRuleBaseline(!includeRuleBaseline)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          cursor: evaluating ? "not-allowed" : "pointer",
+                          userSelect: "none",
+                          marginRight: "4px",
+                          opacity: evaluating ? 0.6 : 1,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: "14px",
+                            height: "14px",
+                            borderRadius: "3px",
+                            border: includeRuleBaseline ? "1px solid #0d9488" : "1px solid #94a3b8",
+                            backgroundColor: includeRuleBaseline ? "#0d9488" : "#ffffff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          <svg width="8" height="6" viewBox="0 0 10 8" fill="none" style={{ opacity: includeRuleBaseline ? 1 : 0, display: "block" }}>
+                            <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                        <span style={{ fontSize: "11px", fontWeight: 500, color: "#334155" }}>
+                          Include Rule Score Context
+                        </span>
+                      </label>
+
                       <select
                         disabled={evaluating}
                         value={evalType}
@@ -941,6 +980,40 @@ export default function ActivityDetailsPanel({
                     <p className="text-xs text-slate-550 leading-normal font-light">
                       uses generative AI to analyze the activity label semantically, checking cognitive complexity, manual rule density, OCR needs, and potential business exceptions.
                     </p>
+                    <label
+                      onClick={() => !evaluating && setIncludeRuleBaseline(!includeRuleBaseline)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        cursor: evaluating ? "not-allowed" : "pointer",
+                        userSelect: "none",
+                        marginTop: "8px",
+                        opacity: evaluating ? 0.6 : 1,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "14px",
+                          height: "14px",
+                          borderRadius: "3px",
+                          border: includeRuleBaseline ? "1px solid #0d9488" : "1px solid #94a3b8",
+                          backgroundColor: includeRuleBaseline ? "#0d9488" : "#ffffff",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <svg width="8" height="6" viewBox="0 0 10 8" fill="none" style={{ opacity: includeRuleBaseline ? 1 : 0, display: "block" }}>
+                          <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                      <span style={{ fontSize: "11px", fontWeight: 500, color: "#334155" }}>
+                        Provide Rule-Based Score to LLM as Context
+                      </span>
+                    </label>
                   </div>
                   <div className="flex flex-col sm:flex-row items-stretch gap-2 shrink-0">
                     <select
