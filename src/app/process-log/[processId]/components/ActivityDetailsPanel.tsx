@@ -308,10 +308,21 @@ export default function ActivityDetailsPanel({
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-[9.5px] text-slate-700">
                     <div>Annual Hours Spent: <strong className="text-teal-950">{(step.details.totalAnnualHoursSpent ?? 0).toLocaleString()} hrs/yr</strong></div>
-                    <div>Annual Labor Cost: <strong className="text-teal-950">${(step.details.annualLaborCostUsd ?? 0).toLocaleString()}</strong></div>
+                    <div>Est Labor Rate: <strong className="text-teal-950">${step.details.estimatedHourlyLaborRateUsd ?? 45}/hr</strong></div>
+                    <div>Annual Labor Savings: <strong className="text-teal-950">${(step.details.annualLaborCostUsd ?? 0).toLocaleString()}</strong></div>
                     <div>Build Cost Est: <strong className="text-teal-950">${(step.details.implementationCostEstUsd ?? 12000).toLocaleString()}</strong></div>
-                    <div>Est Payback Period: <strong className="text-teal-950">{step.details.estimatedPaybackMonths !== undefined ? `${step.details.estimatedPaybackMonths} mos` : "N/A"}</strong></div>
+                    <div className="col-span-2">Est Payback Period: <strong className="text-teal-950">{step.details.estimatedPaybackMonths !== undefined ? `${step.details.estimatedPaybackMonths} mos` : "N/A"}</strong></div>
                   </div>
+                  {step.details.laborRateRationale && (
+                    <div className="text-[9px] text-slate-600 italic border-t border-teal-200/60 pt-1 mt-1">
+                      Rate Rationale: {step.details.laborRateRationale}
+                    </div>
+                  )}
+                  {step.details.buildCostRationale && (
+                    <div className="text-[9px] text-slate-600 italic">
+                      Build Rationale: {step.details.buildCostRationale}
+                    </div>
+                  )}
                 </div>
               )}
 

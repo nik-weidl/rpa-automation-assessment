@@ -234,6 +234,27 @@ export const AGENTIC_CRITIQUE_JSON_SCHEMA = {
   },
 };
 
+export const AGENTIC_ROI_JSON_SCHEMA = {
+  name: "rpa_agentic_roi_simulation",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      estimatedHourlyLaborRateUsd: { type: "number" },
+      laborRateRationale: { type: "string" },
+      estimatedImplementationBuildCostUsd: { type: "number" },
+      buildCostRationale: { type: "string" },
+    },
+    required: [
+      "estimatedHourlyLaborRateUsd",
+      "laborRateRationale",
+      "estimatedImplementationBuildCostUsd",
+      "buildCostRationale",
+    ],
+    additionalProperties: false,
+  },
+};
+
 /**
  * evaluates an activity using a true dynamic agentic loop:
  * - executes a dynamic while (confidenceScore < 85 && turnCount < MAX_TURNS) loop
@@ -609,19 +630,54 @@ Return JSON with rpaArchetype, rpaArchetypeLabel, implementationEffort, effortRa
       });
     } else if (selectedTool === "SIMULATE_RPA_ROI") {
       const totalAnnualHoursSpent = Math.round(((activity.frequency * (activity.averageDuration / 1000)) / 3600) * 10) / 10;
-      const annualLaborCostUsd = Math.round(totalAnnualHoursSpent * 45);
-      const implementationCostEstUsd = 12000;
+
+      const roiSystemPrompt = `You are a financial RPA domain analyst estimating hourly wage rates and bot implementation costs based on task semantics and technical complexity.
+Evaluate activity "${activity.name}".
+
+Estimate:
+1. "estimatedHourlyLaborRateUsd": Realistic fully-loaded hourly labor rate ($/hr) based on the human job role / skill level required by this task (e.g., $25-35/hr for clerical data entry vs. $100-200/hr for specialized clinical or financial decision-making).
+2. "laborRateRationale": Brief concise explanation for the labor rate based on implied human role.
+3. "estimatedImplementationBuildCostUsd": Realistic RPA bot engineering build cost ($) based on technical complexity (e.g. $4,000-$8,000 for simple API integration vs. $15,000-$30,000 for complex multi-system UI/OCR automation).
+4. "buildCostRationale": Brief concise explanation for the build cost estimate.`;
+
+      const roiUserPrompt = `Activity: "${activity.name}"
+Annual Hours Spent (Empirical Log Data): ${totalAnnualHoursSpent} hours/yr
+Retrieved Context: ${JSON.stringify(retrievedMetrics)}
+Technical Archetype: ${rpaArchetypeLabel} (Effort: ${implementationEffort})
+
+Return JSON with estimatedHourlyLaborRateUsd, laborRateRationale, estimatedImplementationBuildCostUsd, and buildCostRationale.`;
+
+      const roiResult = await callOpenRouter(model, roiSystemPrompt, roiUserPrompt, {
+        type: "json_schema",
+        json_schema: AGENTIC_ROI_JSON_SCHEMA,
+      });
+      trackUsage(roiResult);
+
+      const parsedRoi = cleanAndParseJson(roiResult.content);
+      const estimatedHourlyLaborRateUsd = typeof parsedRoi.estimatedHourlyLaborRateUsd === "number" && parsedRoi.estimatedHourlyLaborRateUsd > 0
+        ? Math.round(parsedRoi.estimatedHourlyLaborRateUsd)
+        : 45;
+      const laborRateRationale = typeof parsedRoi.laborRateRationale === "string" ? parsedRoi.laborRateRationale : "Standard administrative labor rate.";
+      const implementationCostEstUsd = typeof parsedRoi.estimatedImplementationBuildCostUsd === "number" && parsedRoi.estimatedImplementationBuildCostUsd > 0
+        ? Math.round(parsedRoi.estimatedImplementationBuildCostUsd)
+        : 12000;
+      const buildCostRationale = typeof parsedRoi.buildCostRationale === "string" ? parsedRoi.buildCostRationale : "Standard RPA bot implementation cost.";
+
+      const annualLaborCostUsd = Math.round(totalAnnualHoursSpent * estimatedHourlyLaborRateUsd);
       const estimatedPaybackMonths = annualLaborCostUsd > 0 ? Math.max(1, Math.round((implementationCostEstUsd / (annualLaborCostUsd / 12)) * 10) / 10) : 99;
       const roiTier = annualLaborCostUsd > 25000 ? "HIGH_ROI" : annualLaborCostUsd > 8000 ? "MODERATE_ROI" : "LOW_ROI";
 
       recordStep({
-        title: "Tool Execution: Simulated Financial RPA ROI",
+        title: "Tool Execution: Simulated Hybrid RPA ROI",
         type: "roi",
-        content: `Simulated annual labor cost savings of $${annualLaborCostUsd.toLocaleString()}.`,
+        content: `Simulated annual labor cost savings of $${annualLaborCostUsd.toLocaleString()} based on $${estimatedHourlyLaborRateUsd}/hr rate (${laborRateRationale}). Build cost: $${implementationCostEstUsd.toLocaleString()} (${buildCostRationale}).`,
         details: {
           totalAnnualHoursSpent,
+          estimatedHourlyLaborRateUsd,
+          laborRateRationale,
           annualLaborCostUsd,
           implementationCostEstUsd,
+          buildCostRationale,
           estimatedPaybackMonths,
           roiTier,
         },

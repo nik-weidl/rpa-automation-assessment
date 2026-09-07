@@ -223,6 +223,20 @@ test("evaluateActivityWithLLMAgentic executes new tools (INSPECT_TRACE_VARIANTS,
     costUsd: 0.0004,
   });
 
+  // tool execution mock: SIMULATE_RPA_ROI domain estimation
+  mockedCall.mockResolvedValueOnce({
+    model: "~google/gemini-pro-latest",
+    content: JSON.stringify({
+      estimatedHourlyLaborRateUsd: 40,
+      laborRateRationale: "Standard accounting data verification clerk rate.",
+      estimatedImplementationBuildCostUsd: 8000,
+      buildCostRationale: "Moderate API endpoint integration complexity.",
+    }),
+    latencyMs: 500,
+    tokens: { prompt: 100, completion: 40, total: 140 },
+    costUsd: 0.0004,
+  });
+
   // turn 4: decision to FINAL_SYNTHESIS
   mockedCall.mockResolvedValueOnce({
     model: "~google/gemini-pro-latest",
