@@ -235,11 +235,18 @@ export default function FeasibilityMatrix({
                             >
                               {score}%
                             </span>
-                            {asm.type === "LLM_AGENTIC" && (
-                              <span className="text-[7px] font-bold text-purple-700 bg-purple-100 px-1 py-0.2 rounded uppercase">
-                                Agentic
-                              </span>
-                            )}
+                            <div className="flex items-center gap-0.5 flex-wrap justify-center mt-0.5">
+                              {asm.type === "LLM_AGENTIC" && (
+                                <span className="text-[7px] font-bold text-purple-700 bg-purple-100 px-1 py-0.2 rounded uppercase">
+                                  Agentic
+                                </span>
+                              )}
+                              {(asm.rawResponse as any)?.includeRuleBaseline !== false && (
+                                <span className="text-[7px] font-bold text-red-700 bg-red-100 border border-red-200 px-1 py-0.2 rounded uppercase">
+                                  Rule Context
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <span className="text-slate-400 font-normal">—</span>

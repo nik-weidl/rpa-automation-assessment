@@ -77,7 +77,7 @@ export default function ComparativeWorkbenchModal({
                     {/* model header */}
                     <div className={`p-4 border-b flex items-center justify-between ${scoreColor}`}>
                       <div>
-                        <span className="font-semibold text-xs tracking-wider uppercase text-slate-800 flex items-center gap-1.5" style={{ fontSize: "11px", fontWeight: "bold" }}>
+                        <span className="font-semibold text-xs tracking-wider uppercase text-slate-800 flex items-center gap-1.5 flex-wrap" style={{ fontSize: "11px", fontWeight: "bold" }}>
                           {displayName}
                           <span className={`text-[8px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold ${
                             asm.type === "LLM_AGENTIC"
@@ -86,6 +86,11 @@ export default function ComparativeWorkbenchModal({
                           }`}>
                             {asm.type === "LLM_AGENTIC" ? "Agentic" : "Single-Shot"}
                           </span>
+                          {(asm.rawResponse as any)?.includeRuleBaseline !== false && (
+                            <span className="text-[8px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold bg-red-100 text-red-800 border border-red-200">
+                              Rule Context
+                            </span>
+                          )}
                         </span>
                         <p className="text-[9px] text-slate-500 font-light mt-0.5">
                           Latency: {asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: {formatCost(asm.costUsd, asm.model)}
