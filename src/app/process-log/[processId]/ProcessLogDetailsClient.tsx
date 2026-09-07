@@ -1209,7 +1209,7 @@ export default function ProcessLogDetailsClient({ processLog }: ProcessLogDetail
                       </svg>
                     </span>
                     <span style={{ fontSize: "11px", fontWeight: 500, color: "#334155" }}>
-                      Provide Rule Score to LLM as Context
+                      Include Rule Baseline Context
                     </span>
                   </label>
                 </div>

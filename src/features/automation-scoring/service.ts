@@ -294,7 +294,12 @@ ${ruleBasedScore !== null ? `- Statistical Rule-Based Baseline Score: ${ruleBase
       missingInfo,
       latencyMs: llmResult.latencyMs,
       costUsd: llmResult.costUsd ?? calculateLlmCost(model, llmResult.tokens.prompt, llmResult.tokens.completion),
-      rawResponse: parsedResponse as any,
+      rawResponse: {
+        includeRuleBaseline,
+        ruleBasedScore,
+        ruleBasedLabel,
+        ...parsedResponse,
+      } as any,
     },
   });
 

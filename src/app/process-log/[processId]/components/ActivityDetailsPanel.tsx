@@ -454,7 +454,7 @@ export default function ActivityDetailsPanel({
                     <MetricTooltip text="semantic and cognitive feasibility score evaluated using a generative AI LLM on OpenRouter." align="right" position="bottom" />
                   </span>
                   {llmAssessment ? (
-                    <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <strong className="text-slate-800 text-base font-bold">{llmAssessment.score}%</strong>
                       <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-white ${
                         llmAssessment.label === "HIGH"
@@ -465,6 +465,15 @@ export default function ActivityDetailsPanel({
                       }`}>
                         {llmAssessment.label}
                       </span>
+                      {(llmAssessment.rawResponse as any)?.includeRuleBaseline !== false ? (
+                        <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-red-50 text-red-700 border border-red-200">
+                          Rule Context
+                        </span>
+                      ) : (
+                        <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600 border border-slate-200">
+                          Independent
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-450 font-light ml-1">
                         via {llmAssessment.model ? (SUPPORTED_MODELS.find(m => m.id === llmAssessment.model)?.name || llmAssessment.model.split("/").pop()) : "Unknown"}
                       </span>
@@ -722,6 +731,11 @@ export default function ActivityDetailsPanel({
                               <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isAgentic ? (isSelected ? "bg-purple-900 text-purple-100" : "bg-purple-200 text-purple-800") : (isSelected ? "bg-teal-800 text-teal-100" : "bg-slate-100 text-slate-600")}`}>
                                 {isAgentic ? "Agentic" : "Single"}
                               </span>
+                              {(asm.rawResponse as any)?.includeRuleBaseline !== false && (
+                                <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isSelected ? "bg-red-900 text-red-100 font-bold" : "bg-red-100 text-red-800"}`}>
+                                  Rule Context
+                                </span>
+                              )}
                               <span>({asm.score}%)</span>
                             </button>
                           );
@@ -746,25 +760,36 @@ export default function ActivityDetailsPanel({
                   )}
                   {/* reasoning block */}
                   <div className="card bg-teal-50/5 border border-teal-200 p-4 rounded-sm text-slate-700 text-xs leading-relaxed space-y-2">
-                    <div className="text-[10px] uppercase font-bold tracking-wider text-teal-600 flex items-center justify-between">
+                    <div className="text-[10px] uppercase font-bold tracking-wider text-teal-600 flex items-center justify-between flex-wrap gap-1">
                       <span>AI Assessment Reasoning</span>
-                      {llmAssessment.type === "LLM_AGENTIC" && (
-                        <div className="flex items-center gap-1.5">
-                          {(llmAssessment.rawResponse as any)?.rpaArchetypeLabel && (
-                            <span className="bg-blue-100 text-blue-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-blue-200">
-                              {(llmAssessment.rawResponse as any).rpaArchetypeLabel}
-                            </span>
-                          )}
-                          {(llmAssessment.rawResponse as any)?.implementationEffort && (
-                            <span className="bg-purple-100 text-purple-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-purple-200">
-                              Effort: {(llmAssessment.rawResponse as any).implementationEffort}
-                            </span>
-                          )}
-                          <span className="bg-purple-600 text-white text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider shadow-xs">
-                            Dynamic Agentic Loop
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(llmAssessment.rawResponse as any)?.includeRuleBaseline !== false ? (
+                          <span className="bg-red-100 text-red-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-red-200">
+                            Rule Context
                           </span>
-                        </div>
-                      )}
+                        ) : (
+                          <span className="bg-slate-100 text-slate-700 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-slate-200">
+                            Independent Evaluation
+                          </span>
+                        )}
+                        {llmAssessment.type === "LLM_AGENTIC" && (
+                          <>
+                            {(llmAssessment.rawResponse as any)?.rpaArchetypeLabel && (
+                              <span className="bg-blue-100 text-blue-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-blue-200">
+                                {(llmAssessment.rawResponse as any).rpaArchetypeLabel}
+                              </span>
+                            )}
+                            {(llmAssessment.rawResponse as any)?.implementationEffort && (
+                              <span className="bg-purple-100 text-purple-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-purple-200">
+                                Effort: {(llmAssessment.rawResponse as any).implementationEffort}
+                              </span>
+                            )}
+                            <span className="bg-purple-600 text-white text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider shadow-xs">
+                              Dynamic Agentic Loop
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                     {(() => {
                       const reasoningParts = llmAssessment.reasoning ? llmAssessment.reasoning.split(/\[Adversarial Verification Audit\]:\s*/) : ["", ""];
@@ -884,7 +909,7 @@ export default function ActivityDetailsPanel({
                           </svg>
                         </span>
                         <span style={{ fontSize: "11px", fontWeight: 500, color: "#334155" }}>
-                          Include Rule Score Context
+                          Include Rule Baseline Context
                         </span>
                       </label>
 
@@ -1022,7 +1047,7 @@ export default function ActivityDetailsPanel({
                         </svg>
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 500, color: "#334155" }}>
-                        Provide Rule-Based Score to LLM as Context
+                        Include Rule Baseline Context
                       </span>
                     </label>
                   </div>

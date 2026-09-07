@@ -858,6 +858,7 @@ Audit this assessment. Return calibratedScore, calibratedLabel, rpaArchetype, rp
   });
 
   const rawResponse = {
+    includeRuleBaseline,
     turnsExecuted: turnCount,
     confidenceScore,
     currentLabel,
