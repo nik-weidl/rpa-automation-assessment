@@ -853,9 +853,17 @@ Audit this assessment. Return calibratedScore, calibratedLabel, rpaArchetype, rp
     evaluationComplete = true;
   }
 
-  await prisma.assessment.deleteMany({
+  const existingAgentic = await prisma.assessment.findMany({
     where: { activityId, type: "LLM_AGENTIC" as AssessmentType, model },
   });
+  const toDeleteAgentic = existingAgentic.filter(
+    (a) => ((a.rawResponse as any)?.includeRuleBaseline !== false) === includeRuleBaseline
+  );
+  if (toDeleteAgentic.length > 0) {
+    await prisma.assessment.deleteMany({
+      where: { id: { in: toDeleteAgentic.map((a) => a.id) } },
+    });
+  }
 
   const rawResponse = {
     includeRuleBaseline,

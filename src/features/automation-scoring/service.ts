@@ -271,14 +271,24 @@ ${ruleBasedScore !== null ? `- Statistical Rule-Based Baseline Score: ${ruleBase
     ? parsedResponse.missingInfo.map((m: any) => String(m))
     : [];
 
-  // clean up old assessment for this specific activity, type and model
-  await prisma.assessment.deleteMany({
+  // clean up old assessment for this specific activity, type, model, and rule context state
+  const existingSingleShot = await prisma.assessment.findMany({
     where: {
       activityId,
       type: "LLM_SINGLE_SHOT" as AssessmentType,
       model,
     },
   });
+  const toDeleteSingleShot = existingSingleShot.filter(
+    (a) => ((a.rawResponse as any)?.includeRuleBaseline !== false) === includeRuleBaseline
+  );
+  if (toDeleteSingleShot.length > 0) {
+    await prisma.assessment.deleteMany({
+      where: {
+        id: { in: toDeleteSingleShot.map((a) => a.id) },
+      },
+    });
+  }
 
   // insert the assessment
   const assessment = await prisma.assessment.create({
