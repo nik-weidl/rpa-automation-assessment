@@ -54,19 +54,27 @@ export async function GET(
             resourceEntropy: act.resourceEntropy,
             predecessorEntropy: act.predecessorEntropy,
             successorEntropy: act.successorEntropy,
-            assessments: actAssessments.map((a) => ({
-              id: a.id,
-              type: a.type,
-              model: a.model || "N/A",
-              score: a.score,
-              label: a.label,
-              reasoning: a.reasoning,
-              risks: a.risks,
-              missingInfo: a.missingInfo,
-              latencyMs: a.latencyMs,
-              costUsd: a.costUsd,
-              createdAt: a.createdAt.toISOString(),
-            })),
+            assessments: actAssessments.map((a) => {
+              const rawObj = typeof a.rawResponse === "object" ? (a.rawResponse as any) : {};
+              const includeRuleBaseline = a.type === "RULE_BASED" ? false : rawObj?.includeRuleBaseline !== false;
+              const evaluationContext = a.type === "RULE_BASED" ? "RULE_BASED" : (includeRuleBaseline ? "RULE_CONTEXT" : "INDEPENDENT");
+              return {
+                id: a.id,
+                type: a.type,
+                model: a.model || "N/A",
+                evaluationContext,
+                includeRuleBaseline,
+                score: a.score,
+                label: a.label,
+                reasoning: a.reasoning,
+                risks: a.risks,
+                missingInfo: a.missingInfo,
+                latencyMs: a.latencyMs,
+                costUsd: a.costUsd,
+                rawResponse: a.rawResponse,
+                createdAt: a.createdAt.toISOString(),
+              };
+            }),
           };
         }),
       };
@@ -98,6 +106,8 @@ export async function GET(
       "AssessmentId",
       "AssessmentType",
       "Model",
+      "EvaluationContext",
+      "IncludeRuleBaseline",
       "FeasibilityScore",
       "AutomationLabel",
       "Reasoning",
@@ -143,11 +153,17 @@ export async function GET(
           '""',
           '""',
           '""',
+          '""',
+          '""',
           escapeCsv(act.createdAt.toISOString()),
         ];
         csvRows.push(row.join(","));
       } else {
         for (const a of actAssessments) {
+          const rawObj = typeof a.rawResponse === "object" ? (a.rawResponse as any) : {};
+          const includeRuleBaseline = a.type === "RULE_BASED" ? false : rawObj?.includeRuleBaseline !== false;
+          const evaluationContext = a.type === "RULE_BASED" ? "RULE_BASED" : (includeRuleBaseline ? "RULE_CONTEXT" : "INDEPENDENT");
+
           const row = [
             escapeCsv(processLog.id),
             escapeCsv(processLog.name),
@@ -164,6 +180,8 @@ export async function GET(
             escapeCsv(a.id),
             escapeCsv(a.type),
             escapeCsv(a.model || "N/A"),
+            escapeCsv(evaluationContext),
+            includeRuleBaseline ? "TRUE" : "FALSE",
             a.score,
             escapeCsv(a.label),
             escapeCsv(a.reasoning),
