@@ -23,6 +23,7 @@ export default function FeasibilityMatrix({
 }: FeasibilityMatrixProps) {
   const [matrixScope, setMatrixScope] = useState<"all" | "visible">("visible");
   const [matrixTypeFilter, setMatrixTypeFilter] = useState<"ALL" | "LLM_SINGLE_SHOT" | "LLM_AGENTIC">("ALL");
+  const [matrixContextFilter, setMatrixContextFilter] = useState<"ALL" | "INDEPENDENT" | "RULE_CONTEXT">("ALL");
 
   const displayedActivities = useMemo(() => {
     if (matrixScope === "visible") {
@@ -32,81 +33,180 @@ export default function FeasibilityMatrix({
     return activities;
   }, [activities, matrixScope, activeConfirmedNodeLimit]);
 
-  const totalLlmCostUsd = assessments
-    ? assessments
-        .filter((a) => (a.type === "LLM_SINGLE_SHOT" || a.type === "LLM_AGENTIC") && a.costUsd !== null && a.costUsd !== undefined)
-        .reduce((sum, a) => sum + (a.costUsd || 0), 0)
-    : 0;
+  const stats = useMemo(() => {
+    let ruleCount = 0;
+    let singleShotIndepCount = 0;
+    let agenticIndepCount = 0;
+    let ruleContextCount = 0;
+    let totalLlmCostUsd = 0;
+
+    assessments.forEach((a) => {
+      if (a.type === "RULE_BASED") {
+        ruleCount++;
+      } else if (a.type === "LLM_SINGLE_SHOT" || a.type === "LLM_AGENTIC") {
+        if (a.costUsd) totalLlmCostUsd += a.costUsd;
+        const hasRuleContext = (a.rawResponse as any)?.includeRuleBaseline !== false;
+        if (hasRuleContext) {
+          ruleContextCount++;
+        } else if (a.type === "LLM_SINGLE_SHOT") {
+          singleShotIndepCount++;
+        } else if (a.type === "LLM_AGENTIC") {
+          agenticIndepCount++;
+        }
+      }
+    });
+
+    return {
+      ruleCount,
+      singleShotIndepCount,
+      agenticIndepCount,
+      ruleContextCount,
+      totalLlmCostUsd,
+    };
+  }, [assessments]);
 
   return (
     <div className="space-y-6 font-sans">
-      <div className="card bg-white z-depth-1 border border-slate-200 rounded-sm p-4 flex flex-col gap-3">
-        <div>
-          <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1 block">
-            Feasibility Scoring Matrix
-          </span>
-          <p className="text-xs text-slate-500 font-light mt-0.5">
-            Compare automation scores across rule-based criteria, single-shot LLM prompts, and dynamic agentic reasoning loops.
-          </p>
+      <div className="card bg-white z-depth-1 border border-slate-200 rounded-sm p-4 flex flex-col gap-4">
+        <div className="flex flex-row items-center justify-between flex-wrap gap-2">
+          <div>
+            <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 flex items-center gap-1">
+              Feasibility Scoring Matrix
+            </span>
+            <p className="text-xs text-slate-500 font-light mt-0.5">
+              Compare automation scores across rule-based baselines, single-shot LLM prompts, and agentic loops across independent vs. rule-context evaluation modes.
+            </p>
+          </div>
+          {stats.totalLlmCostUsd > 0 && (
+            <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded font-medium">
+              Total LLM Cost: <span className="text-slate-900 font-bold ml-1">{formatCost(stats.totalLlmCostUsd, null)}</span>
+            </div>
+          )}
         </div>
         
-        {/* model summary stats - row below */}
-        <div className="flex flex-row flex-wrap gap-x-8 gap-y-2 border-t border-slate-100 pt-3 text-[10px] text-slate-500 font-semibold">
-          <div>Displayed Steps: <span className="text-slate-800 font-bold ml-1">{displayedActivities.length} / {activities.length}</span></div>
-          <div>AI Models Stored: <span className="text-slate-800 font-bold ml-1">
-            {new Set(assessments.filter(a => a.type === "LLM_SINGLE_SHOT" || a.type === "LLM_AGENTIC").map(a => a.model)).size}
-          </span></div>
-          {totalLlmCostUsd > 0 && (
-            <div>Total LLM Cost: <span className="text-slate-800 font-bold ml-1">{formatCost(totalLlmCostUsd, null)}</span></div>
-          )}
+        {/* Category KPI summary grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-100 pt-3">
+          <div className="bg-slate-50 border border-slate-200 p-2.5 rounded flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rule Baseline</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-base font-extrabold text-slate-800">{stats.ruleCount}</span>
+              <span className="text-[9px] font-semibold text-slate-400">Heuristic</span>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 p-2.5 rounded flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider">Single-Shot (Indep)</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-base font-extrabold text-teal-900">{stats.singleShotIndepCount}</span>
+              <span className="text-[9px] font-semibold text-slate-400">Direct LLM</span>
+            </div>
+          </div>
+
+          <div className="bg-purple-50/50 border border-purple-200 p-2.5 rounded flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">Agentic (Indep)</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-base font-extrabold text-purple-900">{stats.agenticIndepCount}</span>
+              <span className="text-[9px] font-semibold text-purple-500">Multi-Turn</span>
+            </div>
+          </div>
+
+          <div className="bg-red-50/60 border border-red-200 p-2.5 rounded flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-red-800 uppercase tracking-wider">Rule Context Informed</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-base font-extrabold text-red-900">{stats.ruleContextCount}</span>
+              <span className="text-[9px] font-semibold text-red-600">Context Badge</span>
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="overflow-x-auto border border-slate-200 rounded-sm bg-white z-depth-1">
-        {/* Integrated Table Header Filter Strip */}
-        <div className={`bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex ${isExpanded ? "flex-row items-center justify-between" : "flex-col items-start"} gap-2.5 flex-wrap`}>
-          {/* Left: Evaluation Mode Filter Pills */}
-          <div className="flex items-center gap-2 flex-wrap max-w-full">
-            <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Mode:</span>
-            <div className="flex flex-wrap bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
-              <button
-                type="button"
-                onClick={() => setMatrixTypeFilter("ALL")}
-                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
-                  matrixTypeFilter === "ALL"
-                    ? "bg-white text-teal-800 font-bold shadow-2xs"
-                    : "bg-transparent text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                All Evaluations
-              </button>
-              <button
-                type="button"
-                onClick={() => setMatrixTypeFilter("LLM_SINGLE_SHOT")}
-                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
-                  matrixTypeFilter === "LLM_SINGLE_SHOT"
-                    ? "bg-white text-teal-800 font-bold shadow-2xs"
-                    : "bg-transparent text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Single-Shot
-              </button>
-              <button
-                type="button"
-                onClick={() => setMatrixTypeFilter("LLM_AGENTIC")}
-                className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
-                  matrixTypeFilter === "LLM_AGENTIC"
-                    ? "bg-purple-600 text-white font-bold shadow-2xs"
-                    : "bg-transparent text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Agentic Loop
-              </button>
+        {/* Dual-Axis Table Header Filter Strip */}
+        <div className={`bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex ${isExpanded ? "flex-row items-center justify-between" : "flex-col items-start"} gap-3 flex-wrap`}>
+          <div className="flex items-center gap-4 flex-wrap max-w-full">
+            {/* Strategy Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Strategy:</span>
+              <div className="flex bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
+                <button
+                  type="button"
+                  onClick={() => setMatrixTypeFilter("ALL")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    matrixTypeFilter === "ALL"
+                      ? "bg-white text-teal-800 font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixTypeFilter("LLM_SINGLE_SHOT")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    matrixTypeFilter === "LLM_SINGLE_SHOT"
+                      ? "bg-white text-teal-800 font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Single-Shot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixTypeFilter("LLM_AGENTIC")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    matrixTypeFilter === "LLM_AGENTIC"
+                      ? "bg-purple-600 text-white font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Agentic Loop
+                </button>
+              </div>
+            </div>
+
+            {/* Context Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Context:</span>
+              <div className="flex bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
+                <button
+                  type="button"
+                  onClick={() => setMatrixContextFilter("ALL")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    matrixContextFilter === "ALL"
+                      ? "bg-white text-teal-800 font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  All Contexts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixContextFilter("INDEPENDENT")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    matrixContextFilter === "INDEPENDENT"
+                      ? "bg-white text-slate-800 font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Independent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrixContextFilter("RULE_CONTEXT")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    matrixContextFilter === "RULE_CONTEXT"
+                      ? "bg-red-600 text-white font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Rule Context
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Right: Activity Scope Filter Pills */}
-          <div className="flex items-center gap-2 flex-wrap max-w-full">
+          <div className="flex items-center gap-2 flex-wrap max-w-full ml-auto">
             <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Scope:</span>
             <div className="flex flex-wrap bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
               <button
@@ -165,20 +265,32 @@ export default function FeasibilityMatrix({
                 (a) => a.activityId === act.id && a.type === "RULE_BASED"
               );
               
-              // get LLM assessments
+              // get LLM assessments matching dual-axis filters
               const modelAssessments: { [modelId: string]: any } = {};
               const activeScores: number[] = [];
               
               SUPPORTED_MODELS.forEach((model) => {
-                let asm = null;
-                if (matrixTypeFilter === "LLM_SINGLE_SHOT") {
-                  asm = assessments.find((a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id);
-                } else if (matrixTypeFilter === "LLM_AGENTIC") {
-                  asm = assessments.find((a) => a.activityId === act.id && a.type === "LLM_AGENTIC" && a.model === model.id);
-                } else {
-                  asm = assessments.find((a) => a.activityId === act.id && a.type === "LLM_AGENTIC" && a.model === model.id)
-                    || assessments.find((a) => a.activityId === act.id && a.type === "LLM_SINGLE_SHOT" && a.model === model.id);
-                }
+                const candidates = assessments.filter((a) => {
+                  if (a.activityId !== act.id || a.model !== model.id) return false;
+                  if (a.type !== "LLM_SINGLE_SHOT" && a.type !== "LLM_AGENTIC") return false;
+                  
+                  if (matrixTypeFilter !== "ALL" && a.type !== matrixTypeFilter) return false;
+                  
+                  const isRuleContext = (a.rawResponse as any)?.includeRuleBaseline !== false;
+                  if (matrixContextFilter === "INDEPENDENT" && isRuleContext) return false;
+                  if (matrixContextFilter === "RULE_CONTEXT" && !isRuleContext) return false;
+                  
+                  return true;
+                });
+
+                // Pick Independent evaluation first (preferring Agentic over Single-Shot if strategy filter is ALL), then fall back to Rule Context
+                const asm = 
+                  candidates.find((a) => (a.rawResponse as any)?.includeRuleBaseline === false && a.type === "LLM_AGENTIC") ||
+                  candidates.find((a) => (a.rawResponse as any)?.includeRuleBaseline === false) ||
+                  candidates.find((a) => a.type === "LLM_AGENTIC") ||
+                  candidates[0] ||
+                  null;
+
                 modelAssessments[model.id] = asm;
                 if (asm) {
                   activeScores.push(asm.score);
@@ -225,25 +337,36 @@ export default function FeasibilityMatrix({
                   {SUPPORTED_MODELS.map((model) => {
                     const asm = modelAssessments[model.id];
                     const score = asm ? asm.score : null;
+                    const isRuleContext = asm ? (asm.rawResponse as any)?.includeRuleBaseline !== false : false;
+
                     return (
                       <td key={model.id} className="py-3 px-4 text-center border-l border-slate-200">
                         {score !== null ? (
                           <div className="flex flex-col items-center gap-0.5">
                             <span 
-                              title={`[${asm.type === "LLM_AGENTIC" ? "Agentic Loop" : "Single-Shot"}] Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
+                              title={`[${asm.type === "LLM_AGENTIC" ? "Agentic Loop" : "Single-Shot"} | ${isRuleContext ? "Rule Context Informed" : "Independent"}] Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
                               className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
                             >
                               {score}%
                             </span>
                             <div className="flex items-center gap-0.5 flex-wrap justify-center mt-0.5">
-                              {asm.type === "LLM_AGENTIC" && (
-                                <span className="text-[7px] font-bold text-purple-700 bg-purple-100 px-1 py-0.2 rounded uppercase">
+                              {asm.type === "LLM_AGENTIC" ? (
+                                <span className="text-[7px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-1 py-0.2 rounded uppercase">
                                   Agentic
                                 </span>
+                              ) : (
+                                <span className="text-[7px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded uppercase">
+                                  Single
+                                </span>
                               )}
-                              {(asm.rawResponse as any)?.includeRuleBaseline !== false && (
+                              
+                              {isRuleContext ? (
                                 <span className="text-[7px] font-bold text-red-700 bg-red-100 border border-red-200 px-1 py-0.2 rounded uppercase">
                                   Rule Context
+                                </span>
+                              ) : (
+                                <span className="text-[7px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded uppercase">
+                                  Independent
                                 </span>
                               )}
                             </div>
