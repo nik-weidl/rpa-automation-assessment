@@ -405,124 +405,145 @@ export default function ActivityDetailsPanel({
       <div className="flex-1 flex flex-col justify-center">
         {activity ? (
           <div className="space-y-6 text-left">
-            {/* title and primary status */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 pb-4 gap-2">
-              <div>
-                <span className="text-[10px] uppercase font-bold tracking-wider text-teal-600">
-                  Selected Activity
-                </span>
-                <span className="text-xl font-bold text-slate-850 break-all mt-0.5 block" style={{ fontSize: "20px", fontWeight: "bold" }}>{activity.name}</span>
-              </div>
-              <div className="flex flex-wrap gap-4 text-sm">
-                <div className="card bg-white z-depth-1 border border-slate-200 px-3 py-1.5 rounded-sm flex flex-col justify-between shadow-xs">
-                  <span className="text-xs text-slate-500 flex items-center font-medium">
-                    Frequency
-                    <MetricTooltip text="total number of times this activity was executed across all log events." align="right" position="bottom" />
-                  </span>
-                  <strong className="text-slate-800 text-base font-bold">{activity.frequency.toLocaleString()}x</strong>
-                </div>
-                <div className="card bg-white z-depth-1 border border-slate-200 px-3 py-1.5 rounded-sm flex flex-col justify-between shadow-xs">
-                  <span className="text-xs text-slate-500 flex items-center font-medium">
-                    Case Coverage
-                    <MetricTooltip text="percentage of process cases containing this activity at least once." align="right" position="bottom" />
-                  </span>
-                  <strong className="text-slate-800 text-base font-bold">{(activity.caseCoverage * 100).toFixed(1)}%</strong>
-                </div>
-                {activityAssessment && (
-                  <div className="card bg-white z-depth-1 border border-slate-200 px-3 py-1.5 rounded-sm flex flex-col justify-between shadow-xs">
-                    <span className="text-xs text-slate-500 flex items-center font-medium">
-                      Rule-Based Automation Potential
-                      <MetricTooltip text="rule-based feasibility score calculated using the Delphi consensus weights of Farinha et al. (2024)." align="right" position="bottom" />
+            {/* Redesigned Clean Activity Header */}
+            <div className="bg-white border border-slate-200 rounded-sm p-4 space-y-4 shadow-2xs">
+              {/* Top Row: Activity Title & Quick Action Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-700 bg-teal-50 border border-teal-200/80 px-2 py-0.5 rounded-xs">
+                      Activity Details
                     </span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <strong className="text-slate-800 text-base font-bold">{activityAssessment.score}%</strong>
+                  </div>
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight break-all">
+                    {activity.name}
+                  </h2>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-sm font-medium">
+                    <span>Executions:</span>
+                    <strong className="text-slate-900 font-bold">{activity.frequency.toLocaleString()}x</strong>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-sm font-medium">
+                    <span>Case Coverage:</span>
+                    <strong className="text-slate-900 font-bold">{(activity.caseCoverage * 100).toFixed(1)}%</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCompareModalOpen(true)}
+                    className="bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white border-0 rounded-xs px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap transition-colors"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+                    <span>Compare Models</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Feasibility KPI Summary Cards Grid */}
+              <div className={`grid grid-cols-1 sm:grid-cols-2 ${llmAssessment && (llmAssessment.rawResponse as any)?.includeRuleBaseline === false ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-3`}>
+                {/* Card 1: Rule-Based Baseline */}
+                {activityAssessment ? (
+                  <div className="bg-slate-50/80 border border-slate-200/80 p-3 rounded-sm flex flex-col justify-between space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1">
+                        Rule-Based Baseline
+                        <MetricTooltip text="rule-based feasibility score calculated using the Delphi consensus weights of Farinha et al. (2024)." align="right" position="bottom" />
+                      </span>
                       <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-white ${
-                        activityAssessment.label === "HIGH"
-                          ? "bg-teal-500"
-                          : activityAssessment.label === "MEDIUM"
-                          ? "bg-orange-500"
-                          : "bg-pink-500"
+                        activityAssessment.label === "HIGH" ? "bg-teal-500" : activityAssessment.label === "MEDIUM" ? "bg-orange-500" : "bg-pink-500"
                       }`}>
                         {activityAssessment.label}
                       </span>
                     </div>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-2xl font-black text-slate-900">{activityAssessment.score}%</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Heuristic Delphi Score</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50/80 border border-slate-200/80 p-3 rounded-sm flex flex-col justify-between">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Rule-Based Baseline</span>
+                    <span className="text-xs text-slate-400 font-medium">Not Evaluated</span>
                   </div>
                 )}
-                <div className="card bg-white z-depth-1 border border-slate-200 px-3 py-1.5 rounded-sm flex flex-col justify-between shadow-xs">
-                  <span className="text-xs text-slate-500 flex items-center font-medium">
-                    LLM Automation Potential
-                    <MetricTooltip text="semantic and cognitive feasibility score evaluated using a generative AI LLM on OpenRouter." align="right" position="bottom" />
-                  </span>
+
+                {/* Card 2: Active LLM Evaluation */}
+                <div className="bg-slate-50/80 border border-slate-200/80 p-3 rounded-sm flex flex-col justify-between space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-teal-800 flex items-center gap-1">
+                      LLM Potential
+                      <MetricTooltip text="semantic and cognitive feasibility score evaluated using a generative AI LLM on OpenRouter." align="right" position="bottom" />
+                    </span>
+                    {llmAssessment ? (
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-white ${
+                          llmAssessment.label === "HIGH" ? "bg-teal-500" : llmAssessment.label === "MEDIUM" ? "bg-orange-500" : "bg-pink-500"
+                        }`}>
+                          {llmAssessment.label}
+                        </span>
+                        {(llmAssessment.rawResponse as any)?.includeRuleBaseline !== false ? (
+                          <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-red-100 text-red-700 border border-red-200">
+                            Rule Context
+                          </span>
+                        ) : (
+                          <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600 border border-slate-200">
+                            Independent
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-400 border border-slate-200">
+                        Unassessed
+                      </span>
+                    )}
+                  </div>
+
                   {llmAssessment ? (
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <strong className="text-slate-800 text-base font-bold">{llmAssessment.score}%</strong>
-                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-white ${
-                        llmAssessment.label === "HIGH"
-                          ? "bg-teal-500"
-                          : llmAssessment.label === "MEDIUM"
-                          ? "bg-orange-500"
-                          : "bg-pink-500"
-                      }`}>
-                        {llmAssessment.label}
-                      </span>
-                      {(llmAssessment.rawResponse as any)?.includeRuleBaseline !== false ? (
-                        <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-red-50 text-red-700 border border-red-200">
-                          Rule Context
+                    <div className="flex items-baseline justify-between gap-2 mt-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-slate-900">{llmAssessment.score}%</span>
+                        <span className="text-[10px] text-slate-500 font-medium truncate max-w-[140px]" title={llmAssessment.model || undefined}>
+                          via {llmAssessment.model ? (SUPPORTED_MODELS.find(m => m.id === llmAssessment.model)?.name || llmAssessment.model.split("/").pop()) : "LLM"}
                         </span>
-                      ) : (
-                        <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-600 border border-slate-200">
-                          Independent
-                        </span>
-                      )}
-                      <span className="text-[10px] text-slate-450 font-light ml-1">
-                        via {llmAssessment.model ? (SUPPORTED_MODELS.find(m => m.id === llmAssessment.model)?.name || llmAssessment.model.split("/").pop()) : "Unknown"}
-                      </span>
+                      </div>
                     </div>
                   ) : (
-                    <div className="flex items-center mt-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-400 border border-slate-200">
-                        NOT EVALUATED
-                      </span>
-                    </div>
+                    <span className="text-xs text-slate-400 font-medium">Select an LLM model below to evaluate</span>
                   )}
                 </div>
 
-                {/* Standalone Hybrid Score Card */}
+                {/* Card 3: 70/30 Hybrid Score (Shown when Independent) */}
                 {llmAssessment && (llmAssessment.rawResponse as any)?.includeRuleBaseline === false && (
-                  <div className="card bg-blue-50/20 z-depth-1 border border-blue-200 px-3 py-1.5 rounded-sm flex flex-col justify-between shadow-xs">
-                    <span className="text-xs text-blue-900 flex items-center font-medium">
-                      Hybrid Automation Potential
-                      <MetricTooltip text="unbiased ensemble score combining 70% deterministic rule-based baseline + 30% independent LLM semantic analysis." align="right" position="bottom" />
-                    </span>
+                  <div className="bg-blue-50/40 border border-blue-200 p-3 rounded-sm flex flex-col justify-between space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-blue-900 flex items-center gap-1">
+                        70/30 Hybrid Ensemble
+                        <MetricTooltip text="unbiased ensemble score combining 70% deterministic rule-based baseline + 30% independent LLM semantic analysis." align="right" position="bottom" />
+                      </span>
+                      <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-blue-100 text-blue-800 border border-blue-200">
+                        Rule + LLM
+                      </span>
+                    </div>
                     {(() => {
                       const computedHybrid = llmAssessment.hybridScore ?? (activityAssessment ? Math.round(0.70 * activityAssessment.score + 0.30 * llmAssessment.score) : null);
                       const hybridLabel = computedHybrid !== null
                         ? (computedHybrid >= 70 ? "HIGH" : computedHybrid >= 35 ? "MEDIUM" : "LOW")
                         : null;
+
                       return computedHybrid !== null ? (
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <strong className="text-blue-950 text-base font-bold">{computedHybrid}%</strong>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <span className="text-2xl font-black text-blue-950">{computedHybrid}%</span>
                           {hybridLabel && (
                             <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-white ${
-                              hybridLabel === "HIGH"
-                                ? "bg-teal-500"
-                                : hybridLabel === "MEDIUM"
-                                ? "bg-orange-500"
-                                : "bg-pink-500"
+                              hybridLabel === "HIGH" ? "bg-teal-500" : hybridLabel === "MEDIUM" ? "bg-orange-500" : "bg-pink-500"
                             }`}>
                               {hybridLabel}
                             </span>
                           )}
-                          <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-blue-100 text-blue-800 border border-blue-200">
-                            70/30 Ensemble
-                          </span>
                         </div>
                       ) : (
-                        <div className="flex items-center mt-1">
-                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-400 border border-slate-200">
-                            N/A
-                          </span>
-                        </div>
+                        <span className="text-xs text-slate-400 font-medium">—</span>
                       );
                     })()}
                   </div>
