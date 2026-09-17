@@ -58,6 +58,11 @@ export async function GET(
               const rawObj = typeof a.rawResponse === "object" ? (a.rawResponse as any) : {};
               const includeRuleBaseline = a.type === "RULE_BASED" ? false : rawObj?.includeRuleBaseline !== false;
               const evaluationContext = a.type === "RULE_BASED" ? "RULE_BASED" : (includeRuleBaseline ? "RULE_CONTEXT" : "INDEPENDENT");
+              const ruleAsm = actAssessments.find((r) => r.type === "RULE_BASED");
+              const calculatedHybridScore = (a.type !== "RULE_BASED" && !includeRuleBaseline && ruleAsm)
+                ? Math.round(0.70 * ruleAsm.score + 0.30 * a.score)
+                : (a.hybridScore ?? rawObj?.hybridScore ?? null);
+
               return {
                 id: a.id,
                 type: a.type,
@@ -65,6 +70,7 @@ export async function GET(
                 evaluationContext,
                 includeRuleBaseline,
                 score: a.score,
+                hybridScore7030: calculatedHybridScore,
                 label: a.label,
                 reasoning: a.reasoning,
                 risks: a.risks,
@@ -109,6 +115,7 @@ export async function GET(
       "EvaluationContext",
       "IncludeRuleBaseline",
       "FeasibilityScore",
+      "HybridScore7030",
       "AutomationLabel",
       "Reasoning",
       "Risks",
@@ -128,7 +135,8 @@ export async function GET(
 
     for (const act of processLog.activities) {
       const actAssessments = processLog.assessments.filter((a) => a.activityId === act.id);
-      
+      const ruleAsm = actAssessments.find((r) => r.type === "RULE_BASED");
+
       if (actAssessments.length === 0) {
         const row = [
           escapeCsv(processLog.id),
@@ -155,6 +163,7 @@ export async function GET(
           '""',
           '""',
           '""',
+          '""',
           escapeCsv(act.createdAt.toISOString()),
         ];
         csvRows.push(row.join(","));
@@ -163,6 +172,9 @@ export async function GET(
           const rawObj = typeof a.rawResponse === "object" ? (a.rawResponse as any) : {};
           const includeRuleBaseline = a.type === "RULE_BASED" ? false : rawObj?.includeRuleBaseline !== false;
           const evaluationContext = a.type === "RULE_BASED" ? "RULE_BASED" : (includeRuleBaseline ? "RULE_CONTEXT" : "INDEPENDENT");
+          const calculatedHybridScore = (a.type !== "RULE_BASED" && !includeRuleBaseline && ruleAsm)
+            ? Math.round(0.70 * ruleAsm.score + 0.30 * a.score)
+            : (a.hybridScore ?? rawObj?.hybridScore ?? "");
 
           const row = [
             escapeCsv(processLog.id),
@@ -183,6 +195,7 @@ export async function GET(
             escapeCsv(evaluationContext),
             includeRuleBaseline ? "TRUE" : "FALSE",
             a.score,
+            calculatedHybridScore,
             escapeCsv(a.label),
             escapeCsv(a.reasoning),
             escapeCsv(a.risks?.join(" | ") || ""),

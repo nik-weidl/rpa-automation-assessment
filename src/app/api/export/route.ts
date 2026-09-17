@@ -49,6 +49,11 @@ export async function GET(request: Request) {
               const rawObj = typeof a.rawResponse === "object" ? (a.rawResponse as any) : {};
               const includeRuleBaseline = a.type === "RULE_BASED" ? false : rawObj?.includeRuleBaseline !== false;
               const evaluationContext = a.type === "RULE_BASED" ? "RULE_BASED" : (includeRuleBaseline ? "RULE_CONTEXT" : "INDEPENDENT");
+              const ruleAsm = actAssessments.find((r) => r.type === "RULE_BASED");
+              const calculatedHybridScore = (a.type !== "RULE_BASED" && !includeRuleBaseline && ruleAsm)
+                ? Math.round(0.70 * ruleAsm.score + 0.30 * a.score)
+                : (a.hybridScore ?? rawObj?.hybridScore ?? null);
+
               return {
                 id: a.id,
                 type: a.type,
@@ -56,6 +61,7 @@ export async function GET(request: Request) {
                 evaluationContext,
                 includeRuleBaseline,
                 score: a.score,
+                hybridScore7030: calculatedHybridScore,
                 label: a.label,
                 reasoning: a.reasoning,
                 risks: a.risks,
@@ -100,6 +106,7 @@ export async function GET(request: Request) {
       "EvaluationContext",
       "IncludeRuleBaseline",
       "FeasibilityScore",
+      "HybridScore7030",
       "AutomationLabel",
       "Reasoning",
       "Risks",
@@ -120,7 +127,8 @@ export async function GET(request: Request) {
     for (const log of processLogs) {
       for (const act of log.activities) {
         const actAssessments = log.assessments.filter((a) => a.activityId === act.id);
-        
+        const ruleAsm = actAssessments.find((r) => r.type === "RULE_BASED");
+
         if (actAssessments.length === 0) {
           // Row with profile metrics only
           const row = [
@@ -142,6 +150,7 @@ export async function GET(request: Request) {
             '""', // EvaluationContext
             '""', // IncludeRuleBaseline
             '""', // Score
+            '""', // HybridScore7030
             '""', // Label
             '""', // Reasoning
             '""', // Risks
@@ -156,6 +165,9 @@ export async function GET(request: Request) {
             const rawObj = typeof a.rawResponse === "object" ? (a.rawResponse as any) : {};
             const includeRuleBaseline = a.type === "RULE_BASED" ? false : rawObj?.includeRuleBaseline !== false;
             const evaluationContext = a.type === "RULE_BASED" ? "RULE_BASED" : (includeRuleBaseline ? "RULE_CONTEXT" : "INDEPENDENT");
+            const calculatedHybridScore = (a.type !== "RULE_BASED" && !includeRuleBaseline && ruleAsm)
+              ? Math.round(0.70 * ruleAsm.score + 0.30 * a.score)
+              : (a.hybridScore ?? rawObj?.hybridScore ?? "");
 
             const row = [
               escapeCsv(log.id),
@@ -176,6 +188,7 @@ export async function GET(request: Request) {
               escapeCsv(evaluationContext),
               includeRuleBaseline ? "TRUE" : "FALSE",
               a.score,
+              calculatedHybridScore,
               escapeCsv(a.label),
               escapeCsv(a.reasoning),
               escapeCsv(a.risks?.join(" | ") || ""),
