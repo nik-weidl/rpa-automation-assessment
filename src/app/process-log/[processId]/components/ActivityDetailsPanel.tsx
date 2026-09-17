@@ -486,6 +486,47 @@ export default function ActivityDetailsPanel({
                     </div>
                   )}
                 </div>
+
+                {/* Standalone Hybrid Score Card */}
+                {llmAssessment && (llmAssessment.rawResponse as any)?.includeRuleBaseline === false && (
+                  <div className="card bg-blue-50/20 z-depth-1 border border-blue-200 px-3 py-1.5 rounded-sm flex flex-col justify-between shadow-xs">
+                    <span className="text-xs text-blue-900 flex items-center font-medium">
+                      Hybrid Automation Potential
+                      <MetricTooltip text="unbiased ensemble score combining 70% deterministic rule-based baseline + 30% independent LLM semantic analysis." align="right" position="bottom" />
+                    </span>
+                    {(() => {
+                      const computedHybrid = llmAssessment.hybridScore ?? (activityAssessment ? Math.round(0.70 * activityAssessment.score + 0.30 * llmAssessment.score) : null);
+                      const hybridLabel = computedHybrid !== null
+                        ? (computedHybrid >= 70 ? "HIGH" : computedHybrid >= 35 ? "MEDIUM" : "LOW")
+                        : null;
+                      return computedHybrid !== null ? (
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <strong className="text-blue-950 text-base font-bold">{computedHybrid}%</strong>
+                          {hybridLabel && (
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-white ${
+                              hybridLabel === "HIGH"
+                                ? "bg-teal-500"
+                                : hybridLabel === "MEDIUM"
+                                ? "bg-orange-500"
+                                : "bg-pink-500"
+                            }`}>
+                              {hybridLabel}
+                            </span>
+                          )}
+                          <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-blue-100 text-blue-800 border border-blue-200">
+                            70/30 Ensemble
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center mt-1">
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-400 border border-slate-200">
+                            N/A
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -731,9 +772,13 @@ export default function ActivityDetailsPanel({
                               <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isAgentic ? (isSelected ? "bg-purple-900 text-purple-100" : "bg-purple-200 text-purple-800") : (isSelected ? "bg-teal-800 text-teal-100" : "bg-slate-100 text-slate-600")}`}>
                                 {isAgentic ? "Agentic" : "Single"}
                               </span>
-                              {(asm.rawResponse as any)?.includeRuleBaseline !== false && (
+                              {(asm.rawResponse as any)?.includeRuleBaseline !== false ? (
                                 <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isSelected ? "bg-red-900 text-red-100 font-bold" : "bg-red-100 text-red-800"}`}>
                                   Rule Context
+                                </span>
+                              ) : (
+                                <span className={`text-[7px] px-1 py-0.2 rounded font-mono ${isSelected ? "bg-blue-900 text-blue-100 font-bold" : "bg-blue-100 text-blue-800"}`}>
+                                  Hybrid: {asm.hybridScore ?? (activityAssessment ? Math.round(0.70 * activityAssessment.score + 0.30 * asm.score) : asm.score)}%
                                 </span>
                               )}
                               <span>({asm.score}%)</span>
@@ -768,9 +813,14 @@ export default function ActivityDetailsPanel({
                             Rule Context
                           </span>
                         ) : (
-                          <span className="bg-slate-100 text-slate-700 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-slate-200">
-                            Independent Evaluation
-                          </span>
+                          <>
+                            <span className="bg-slate-100 text-slate-700 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-slate-200">
+                              Independent Evaluation
+                            </span>
+                            <span className="bg-blue-100 text-blue-800 text-[9px] px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider border border-blue-200">
+                              70/30 Hybrid: {llmAssessment.hybridScore ?? (activityAssessment ? Math.round(0.70 * activityAssessment.score + 0.30 * llmAssessment.score) : llmAssessment.score)}%
+                            </span>
+                          </>
                         )}
                         {llmAssessment.type === "LLM_AGENTIC" && (
                           <>

@@ -24,6 +24,7 @@ export default function FeasibilityMatrix({
   const [matrixScope, setMatrixScope] = useState<"all" | "visible">("visible");
   const [matrixTypeFilter, setMatrixTypeFilter] = useState<"ALL" | "LLM_SINGLE_SHOT" | "LLM_AGENTIC">("ALL");
   const [matrixContextFilter, setMatrixContextFilter] = useState<"ALL" | "INDEPENDENT" | "RULE_CONTEXT">("ALL");
+  const [scoreDisplayMode, setScoreDisplayMode] = useState<"BOTH" | "RAW" | "HYBRID">("BOTH");
 
   const displayedActivities = useMemo(() => {
     if (matrixScope === "visible") {
@@ -37,6 +38,7 @@ export default function FeasibilityMatrix({
     let ruleCount = 0;
     let singleShotIndepCount = 0;
     let agenticIndepCount = 0;
+    let hybridCount = 0;
     let ruleContextCount = 0;
     let totalLlmCostUsd = 0;
 
@@ -48,10 +50,13 @@ export default function FeasibilityMatrix({
         const hasRuleContext = (a.rawResponse as any)?.includeRuleBaseline !== false;
         if (hasRuleContext) {
           ruleContextCount++;
-        } else if (a.type === "LLM_SINGLE_SHOT") {
-          singleShotIndepCount++;
-        } else if (a.type === "LLM_AGENTIC") {
-          agenticIndepCount++;
+        } else {
+          hybridCount++;
+          if (a.type === "LLM_SINGLE_SHOT") {
+            singleShotIndepCount++;
+          } else if (a.type === "LLM_AGENTIC") {
+            agenticIndepCount++;
+          }
         }
       }
     });
@@ -60,6 +65,7 @@ export default function FeasibilityMatrix({
       ruleCount,
       singleShotIndepCount,
       agenticIndepCount,
+      hybridCount,
       ruleContextCount,
       totalLlmCostUsd,
     };
@@ -74,7 +80,7 @@ export default function FeasibilityMatrix({
               Feasibility Scoring Matrix
             </span>
             <p className="text-xs text-slate-500 font-light mt-0.5">
-              Compare automation scores across rule-based baselines, single-shot LLM prompts, and agentic loops across independent vs. rule-context evaluation modes.
+              Compare automation scores across rule-based baselines, independent single-shot/agentic LLM evaluations, 70/30 hybrid ensembles, and rule-context informed runs.
             </p>
           </div>
           {stats.totalLlmCostUsd > 0 && (
@@ -85,7 +91,7 @@ export default function FeasibilityMatrix({
         </div>
         
         {/* Category KPI summary grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-slate-100 pt-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 border-t border-slate-100 pt-3">
           <div className="bg-slate-50 border border-slate-200 p-2.5 rounded flex flex-col justify-between">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rule Baseline</span>
             <div className="flex items-baseline justify-between mt-1">
@@ -107,6 +113,14 @@ export default function FeasibilityMatrix({
             <div className="flex items-baseline justify-between mt-1">
               <span className="text-base font-extrabold text-purple-900">{stats.agenticIndepCount}</span>
               <span className="text-[9px] font-semibold text-purple-500">Multi-Turn</span>
+            </div>
+          </div>
+
+          <div className="bg-blue-50/50 border border-blue-200 p-2.5 rounded flex flex-col justify-between">
+            <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">70/30 Hybrid Ensemble</span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-base font-extrabold text-blue-950">{stats.hybridCount}</span>
+              <span className="text-[9px] font-semibold text-blue-600">Rule + LLM</span>
             </div>
           </div>
 
@@ -203,6 +217,46 @@ export default function FeasibilityMatrix({
                 </button>
               </div>
             </div>
+
+            {/* Score View Mode */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">View:</span>
+              <div className="flex bg-slate-200/80 p-0.5 rounded border border-slate-300/70 gap-0.5 text-[11px] font-medium select-none">
+                <button
+                  type="button"
+                  onClick={() => setScoreDisplayMode("BOTH")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    scoreDisplayMode === "BOTH"
+                      ? "bg-blue-600 text-white font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Both
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScoreDisplayMode("RAW")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    scoreDisplayMode === "RAW"
+                      ? "bg-white text-slate-800 font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Raw LLM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScoreDisplayMode("HYBRID")}
+                  className={`px-2.5 py-1 rounded transition-all cursor-pointer border-0 ${
+                    scoreDisplayMode === "HYBRID"
+                      ? "bg-blue-600 text-white font-bold shadow-2xs"
+                      : "bg-transparent text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  70/30 Hybrid
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Right: Activity Scope Filter Pills */}
@@ -264,6 +318,7 @@ export default function FeasibilityMatrix({
               const ruleAsm = assessments.find(
                 (a) => a.activityId === act.id && a.type === "RULE_BASED"
               );
+              const ruleScore = ruleAsm ? ruleAsm.score : null;
               
               // get LLM assessments matching dual-axis filters
               const modelAssessments: { [modelId: string]: any } = {};
@@ -324,9 +379,9 @@ export default function FeasibilityMatrix({
                   
                   {/* rule-based score */}
                   <td className="py-3 px-4 text-center border-l border-slate-200 font-bold bg-slate-50/5">
-                    {ruleAsm ? (
-                      <span className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center ${getScoreColor(ruleAsm.score)}`}>
-                        {ruleAsm.score}%
+                    {ruleScore !== null ? (
+                      <span className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center ${getScoreColor(ruleScore)}`}>
+                        {ruleScore}%
                       </span>
                     ) : (
                       <span className="text-slate-400 font-normal">—</span>
@@ -336,18 +391,28 @@ export default function FeasibilityMatrix({
                   {/* LLM model scores */}
                   {SUPPORTED_MODELS.map((model) => {
                     const asm = modelAssessments[model.id];
-                    const score = asm ? asm.score : null;
+                    const rawScore = asm ? asm.score : null;
                     const isRuleContext = asm ? (asm.rawResponse as any)?.includeRuleBaseline !== false : false;
+                    
+                    const modelHybridScore = (asm && !isRuleContext)
+                      ? (asm.hybridScore !== null && asm.hybridScore !== undefined 
+                          ? asm.hybridScore 
+                          : (ruleScore !== null ? Math.round(0.70 * ruleScore + 0.30 * rawScore) : null))
+                      : null;
+
+                    const displayedScore = scoreDisplayMode === "HYBRID" 
+                      ? (modelHybridScore !== null ? modelHybridScore : rawScore)
+                      : rawScore;
 
                     return (
                       <td key={model.id} className="py-3 px-4 text-center border-l border-slate-200">
-                        {score !== null ? (
+                        {displayedScore !== null && asm ? (
                           <div className="flex flex-col items-center gap-0.5">
                             <span 
-                              title={`[${asm.type === "LLM_AGENTIC" ? "Agentic Loop" : "Single-Shot"} | ${isRuleContext ? "Rule Context Informed" : "Independent"}] Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
-                              className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(score)}`}
+                              title={`[${asm.type === "LLM_AGENTIC" ? "Agentic Loop" : "Single-Shot"} | ${isRuleContext ? "Rule Context Informed" : "Independent"}] Raw LLM: ${rawScore}% | Hybrid (70/30): ${modelHybridScore !== null ? `${modelHybridScore}%` : "n/a"} | Latency: ${asm.latencyMs !== null && asm.latencyMs !== undefined ? `${(asm.latencyMs / 1000).toFixed(2)}s` : "n/a"} | Cost: ${formatCost(asm.costUsd, asm.model)}`}
+                              className={`inline-block px-2 py-0.75 rounded-sm text-[10px] min-w-[36px] text-center cursor-help transition-transform hover:scale-105 duration-100 ${getScoreColor(displayedScore)}`}
                             >
-                              {score}%
+                              {displayedScore}%
                             </span>
                             <div className="flex items-center gap-0.5 flex-wrap justify-center mt-0.5">
                               {asm.type === "LLM_AGENTIC" ? (
@@ -365,9 +430,28 @@ export default function FeasibilityMatrix({
                                   Rule Context
                                 </span>
                               ) : (
-                                <span className="text-[7px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded uppercase">
-                                  Independent
-                                </span>
+                                <>
+                                  {scoreDisplayMode === "HYBRID" ? (
+                                    <span className="text-[7px] font-bold text-blue-700 bg-blue-100 border border-blue-200 px-1 py-0.2 rounded uppercase" title={`Raw LLM: ${rawScore}%`}>
+                                      70/30 Hybrid
+                                    </span>
+                                  ) : scoreDisplayMode === "BOTH" ? (
+                                    <>
+                                      <span className="text-[7px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded uppercase">
+                                        Independent
+                                      </span>
+                                      {modelHybridScore !== null && (
+                                        <span className="text-[7px] font-bold text-blue-700 bg-blue-100 border border-blue-200 px-1 py-0.2 rounded uppercase" title={`70/30 Hybrid: ${modelHybridScore}%`}>
+                                          Hybrid: {modelHybridScore}%
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-[7px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded uppercase">
+                                      Independent
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
