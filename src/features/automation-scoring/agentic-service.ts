@@ -865,8 +865,23 @@ Audit this assessment. Return calibratedScore, calibratedLabel, rpaArchetype, rp
     });
   }
 
+  // Calculate 70/30 Hybrid Score for un-anchored independent evaluations (70% Rule + 30% Independent Agentic LLM)
+  let hybridScore: number | null = null;
+  if (!includeRuleBaseline) {
+    const ruleBasedAssessment = await prisma.assessment.findFirst({
+      where: {
+        activityId,
+        type: "RULE_BASED" as AssessmentType,
+      },
+    });
+    if (ruleBasedAssessment) {
+      hybridScore = Math.round(0.70 * ruleBasedAssessment.score + 0.30 * calibratedScore);
+    }
+  }
+
   const rawResponse = {
     includeRuleBaseline,
+    hybridScore,
     turnsExecuted: turnCount,
     confidenceScore,
     currentLabel,
@@ -894,6 +909,7 @@ Audit this assessment. Return calibratedScore, calibratedLabel, rpaArchetype, rp
       type: "LLM_AGENTIC" as AssessmentType,
       model,
       score: calibratedScore,
+      hybridScore,
       label: calibratedLabel,
       reasoning: combinedReasoning,
       risks: finalRisks,

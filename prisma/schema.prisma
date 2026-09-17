@@ -99,6 +99,7 @@ model Assessment {
   type         AssessmentType @default(RULE_BASED)
   model        String?  // LLM model name if AI-based
   score        Float
+  hybridScore  Float?   // 70% Rule-Based + 30% Independent LLM score (only for independent runs)
   label        AutomationLabel
   reasoning    String
   risks        String[] @default([])

@@ -290,6 +290,20 @@ ${ruleBasedScore !== null ? `- Statistical Rule-Based Baseline Score: ${ruleBase
     });
   }
 
+  // Calculate 70/30 Hybrid Score for un-anchored independent evaluations (70% Rule + 30% Independent LLM)
+  let hybridScore: number | null = null;
+  if (!includeRuleBaseline) {
+    const ruleBasedAssessment = await prisma.assessment.findFirst({
+      where: {
+        activityId,
+        type: "RULE_BASED" as AssessmentType,
+      },
+    });
+    if (ruleBasedAssessment) {
+      hybridScore = Math.round(0.70 * ruleBasedAssessment.score + 0.30 * score);
+    }
+  }
+
   // insert the assessment
   const assessment = await prisma.assessment.create({
     data: {
@@ -298,6 +312,7 @@ ${ruleBasedScore !== null ? `- Statistical Rule-Based Baseline Score: ${ruleBase
       type: "LLM_SINGLE_SHOT" as AssessmentType,
       model,
       score,
+      hybridScore,
       label,
       reasoning,
       risks,
@@ -308,6 +323,7 @@ ${ruleBasedScore !== null ? `- Statistical Rule-Based Baseline Score: ${ruleBase
         includeRuleBaseline,
         ruleBasedScore,
         ruleBasedLabel,
+        hybridScore,
         ...parsedResponse,
       } as any,
     },
