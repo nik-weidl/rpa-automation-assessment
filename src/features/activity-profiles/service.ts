@@ -279,14 +279,21 @@ export async function calculateAndStoreActivityProfiles(
         const normalizedResourceEntropy = maxResourceEntropy > 0 ? act.resourceEntropy / maxResourceEntropy : 0;
         const scoreResource = Math.max(0, 1 - normalizedResourceEntropy);
 
-        // weighted formula using Delphi expert weights scaled to 100%
+        // Weights derived from Wellmann et al. (2020) Table 1 citation frequencies,
+        // normalised over the XES-derivable subset of criteria (n=55 total citations):
+        //   Frequency          18/55 = 0.327  (Frequency)
+        //   Case coverage      10/55 = 0.182  (½ of Standardization, count 20)
+        //   Routing complexity 10/55 = 0.182  (½ of Standardization, count 20)
+        //   Predictability     10/55 = 0.182  (Maturity 7 + Stability 3)
+        //   Resource entropy    5/55 = 0.091  (Handover of work)
+        //   Duration            2/55 = 0.036  (Execution time)
         const score =
-          (scoreCoverage * 0.264 +
-            scoreComplexity * 0.241 +
-            scoreDuration * 0.195 +
-            scoreFrequency * 0.184 +
-            scorePredictability * 0.103 +
-            scoreResource * 0.013) *
+          (scoreFrequency * 0.327 +
+            scoreCoverage * 0.182 +
+            scoreComplexity * 0.182 +
+            scorePredictability * 0.182 +
+            scoreResource * 0.091 +
+            scoreDuration * 0.036) *
           100;
 
         const finalScore = Math.round(score * 10) / 10;
